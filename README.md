@@ -1,2 +1,2 @@
-# swap-service
+# Swap service
 An orderbook for performing submarine swaps over nostr
