@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
+    <script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
+    <script src="https://bundle.run/browserify-cipher@1.0.1"></script>
+    <script src="https://supertestnet.github.io/bitcoin-chess/js/bolt11.js"></script>
+    <script src="https://supertestnet.github.io/bitcoin-chess/js/qrcode.js"></script>
+    <script src="https://bundle.run/buffer@6.0.3"></script>
+    <script src="https://bundle.run/varuint-bitcoin@1.1.2"></script>
+    <script>
+      var Buffer = buffer.Buffer;
+    </script>
+    <style>
+      * {
+        box-sizing: border-box;
+        font-size: 1.15rem;
+        font-family: Arial, sans-serif;
+      }
+      html {
+        max-width: 70ch;
+        padding: 3rem 1rem;
+        margin: auto;
+        line-height: 1.25;
+      }
+      h1 {
+        font-size: 2rem;
+      }
+      h2 {
+        font-size: 1.5rem;
+      }
+      input {
+        line-height: 1.25;
+        width: 100%;
+        height: 1.8rem;
+        font-size: 1.15rem;
+        border: 1px solid grey;
+      }
+      .offer {
+        border: 1px solid black;
+        padding: 1rem;
+        margin-bottom: 1rem;
+      }
+      .offer div {
+        margin-bottom: 1rem;
+      }
+      .offer .fill_in_details {
+        display: none;
+      }
+
+      #popup {
+        display: none;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: #fff;
+        padding: 20px;
+        border: 1px solid #ccc;
+        box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.3);
+        word-wrap: break-word;
+        width: 100%;
+        max-width: 400px;
+      }
+    </style>
+    <script>
+      function hexToBytes(hex) {
+        return Uint8Array.from(
+          hex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
+        );
+      }
+
+      function isValidAddress(address) {
+        try {
+          return (
+            typeof bitcoinjs.address.toOutputScript(
+              address,
+              bitcoinjs.networks.testnet
+            ) == "object"
+          );
+        } catch (e) {
+          return;
+        }
+      }
+      function hexToBytes(hex) {
+        return Uint8Array.from(
+          hex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
+        );
+      }
+
+      function base64ToHex(str) {
+        var raw = atob(str);
+        var result = "";
+        var i;
+        for (i = 0; i < raw.length; i++) {
+          var hex = raw.charCodeAt(i).toString(16);
+          result += hex.length === 2 ? hex : "0" + hex;
+        }
+        return result;
+      }
+      function encrypt(privkey, pubkey, text) {
+        var key = nobleSecp256k1
+          .getSharedSecret(privkey, "02" + pubkey, true)
+          .substring(2);
+        var iv = window.crypto.getRandomValues(new Uint8Array(16));
+        var cipher = browserifyCipher.createCipheriv(
+          "aes-256-cbc",
+          hexToBytes(key),
+          iv
+        );
+        var encryptedMessage = cipher.update(text, "utf8", "base64");
+        emsg = encryptedMessage + cipher.final("base64");
+        var uint8View = new Uint8Array(iv.buffer);
+        var decoder = new TextDecoder();
+        return emsg + "?iv=" + btoa(String.fromCharCode.apply(null, uint8View));
+      }
+
+      function decrypt(privkey, pubkey, ciphertext) {
+        var [emsg, iv] = ciphertext.split("?iv=");
+        var key = nobleSecp256k1
+          .getSharedSecret(privkey, "02" + pubkey, true)
+          .substring(2);
+        var decipher = browserifyCipher.createDecipheriv(
+          "aes-256-cbc",
+          hexToBytes(key),
+          hexToBytes(base64ToHex(iv))
+        );
+        var decryptedMessage = decipher.update(emsg, "base64");
+        dmsg = decryptedMessage + decipher.final("utf8");
+        return dmsg;
+      }
+    </script>
+    <script>
+      var $ = document.querySelector.bind(document);
+      var $$ = document.querySelectorAll.bind(document);
+    </script>
+  </head>
+  <body>
+    <h1>Nostr Swap Service</h1>
+    <p>Where Nostr users trade sats on LN for sats on the base layer</p>
+    <h2>Order Book</h2>
+    <div class="orderbook"></div>
+    <div id="popup">
+      <p id="popupText">Popup Text</p>
+    </div>
+    <script>
+      var $ = document.querySelector.bind(document);
+      var $$ = document.querySelectorAll.bind(document);
+      var { getSharedSecret, schnorr, utils } = nobleSecp256k1;
+      var crypto = window.crypto;
+      var getRand = (size) => crypto.getRandomValues(new Uint8Array(size));
+      var sha256 = bitcoinjs.crypto.sha256;
+      var keypair = bitcoinjs.ECPair.makeRandom();
+      // var privKey = keypair.privateKey.toString( "hex" )
+      // var pubKey  = keypair.publicKey.toString( "hex" )
+      // pubKey      = pubKey.substring( 2 )
+      var privKey =
+        "48af5b91b2eb1cab92c7243cf105adc39257fe986da28eb06c33faf3e8704ea7";
+      var pubKey =
+        "659636f537c5efd513d484efdd3571a3db8753e93ee4b16339f965fcbf5f2178";
+      console.log(pubKey);
+      var relay = "ws://192.168.1.4:6969";
+      var socket = new WebSocket(relay);
+
+      socket.addEventListener("message", async function (message) {
+        var [type, subId, event] = JSON.parse(message.data);
+        var { kind, content } = event || {};
+
+        if (kind === 10042) {
+          console.log(event.pubkey);
+          if ($(`div[data-pubkey="${event.pubkey}"]`)) {
+            $(`div[data-pubkey="${event.pubkey}"]`).remove();
+          }
+          if (!content) return;
+          if (!isValidJson(content)) return;
+
+          var parsedEvent = JSON.parse(content);
+
+          if (Object.keys(parsedEvent).length !== 6) return;
+          if (
+            !parsedEvent.offer_id ||
+            !parsedEvent.pubkey ||
+            !parsedEvent.min_amount ||
+            !parsedEvent.max_amount ||
+            !parsedEvent.fee_type ||
+            !parsedEvent.fee
+          )
+            return;
+
+          if (!isHex(parsedEvent.offer_id)) return;
+          if (parsedEvent.offer_id.length !== 64) return;
+
+          if (!isHex(parsedEvent.pubkey)) return;
+          if (parsedEvent.pubkey.length !== 66) return;
+
+          if (typeof parsedEvent.min_amount !== "number") return;
+          if (typeof parsedEvent.max_amount !== "number") return;
+
+          if (parsedEvent.min_amount < 546) return;
+          if (parsedEvent.max_amount < 546) return;
+
+          if (String(parsedEvent.min_amount).includes(".")) return;
+          if (String(parsedEvent.max_amount).includes(".")) return;
+
+          if (typeof parsedEvent.fee_type !== "string") return;
+          if (
+            parsedEvent.fee_type !== "absolute" &&
+            parsedEvent.fee_type !== "percentage"
+          )
+            return;
+
+          if (typeof parsedEvent.fee !== "number") return;
+          if (parsedEvent.fee < 0) return;
+
+          content = JSON.parse(content);
+          var div = document.createElement("div");
+          var fee_suffix = "%";
+          if (content.fee_type == "absolute") fee_suffix = " sats";
+          div.innerHTML = `<div class="offer" data-pubkey="${
+            event.pubkey
+          }" data-offer_id="${content.offer_id}" data-btckey="${
+            content.pubkey
+          }">
+             		<div>You send LN sats</div>
+             		<div>You receive Base Layer sats</div>
+             		<div>Minimum amount: <span class="min_amt">${content.min_amount.toLocaleString()}</span> sats</div>
+             		<div>Maximum amount: <span class="max_amt">${content.max_amount.toLocaleString()}</span> sats</div>
+             		<div>Fee: <span class="fee">${
+                  String(content.fee) + fee_suffix
+                }</span></div>
+             		<div class="accept_offer"><button>Accept offer</button></div>
+             		<div class="fill_in_details">
+             			<p>
+             				Enter an amount of sats you want to receive
+             			</p>
+             			<p>
+             				<input type="number" step="1" class="enter_amount">
+             			</p>
+             			<p>
+             				Enter a bitcoin address where you want to receive the money
+             			</p>
+             			<p>
+             				<input class="enter_address">
+             			</p>
+             			<p>
+             				<button class="finalize_acceptance">Submit</button>
+             			</p>
+             		</div>
+             	</div>`;
+          div.getElementsByClassName("accept_offer")[0].onclick = function () {
+            var pubkey = this.parentElement.getAttribute("data-pubkey");
+            this.parentElement.getElementsByClassName(
+              "fill_in_details"
+            )[0].style.display = "block";
+            this.parentElement.getElementsByClassName("enter_amount")[0].value =
+              content.min_amount;
+            this.parentElement.getElementsByClassName("enter_amount")[0].min =
+              content.min_amount;
+            this.parentElement.getElementsByClassName("enter_amount")[0].max =
+              content.max_amount;
+          };
+          div.getElementsByClassName("finalize_acceptance")[0].onclick =
+            async function () {
+              var sellerPubkey =
+                this.parentElement.parentElement.parentElement.getAttribute(
+                  "data-pubkey"
+                );
+              var btckey =
+                this.parentElement.parentElement.parentElement.getAttribute(
+                  "data-btckey"
+                );
+              var offer_id =
+                this.parentElement.parentElement.parentElement.getAttribute(
+                  "data-offer_id"
+                );
+              var amount =
+                this.parentElement.parentElement.getElementsByClassName(
+                  "enter_amount"
+                )[0].value;
+              var destinationAddress =
+                this.parentElement.parentElement.getElementsByClassName(
+                  "enter_address"
+                )[0].value;
+
+              if (!amount || isNaN(amount)) {
+                alert("Please enter a valid amount");
+                return;
+              }
+              amount = Number(amount);
+              var address =
+                this.parentElement.parentElement.getElementsByClassName(
+                  "enter_address"
+                )[0].value;
+              if (!address || !isValidAddress(address)) {
+                alert("Please enter a valid bitcoin address");
+                return;
+              }
+              amount = Number(amount);
+              var preimage =
+                bitcoinjs.ECPair.makeRandom().privateKey.toString("hex");
+              var hash = bitcoinjs.crypto
+                .sha256(hexToBytes(preimage))
+                .toString("hex");
+              var htlcPair = bitcoinjs.ECPair.makeRandom();
+              var htlcPub = htlcPair.publicKey.toString("hex");
+              var htlcPrv = htlcPair.privateKey.toString("hex");
+              var blockheight = await getBlockheight();
+              var timelock = blockheight + 10;
+              console.log(
+                "serverpubkey:",
+                btckey,
+                "userpubkey",
+                htlcPub,
+                "payment hash",
+                hash,
+                "timelock",
+                timelock
+              );
+              var witness_script = generateHtlc(
+                btckey,
+                htlcPub,
+                hash,
+                timelock
+              );
+              var htlcObject = bitcoinjs.payments.p2wsh({
+                redeem: {
+                  output: witness_script,
+                  network: bitcoinjs.networks.testnet,
+                },
+                network: bitcoinjs.networks.testnet,
+              });
+              sessionStorage.htlcInfo = JSON.stringify([
+                htlcObject.address,
+                btckey,
+                amount,
+                preimage,
+                htlcPrv,
+                timelock,
+                destinationAddress,
+                htlcPub,
+              ]);
+              var message = {};
+              message["offer_id"] = offer_id;
+              message["amount"] = amount;
+              message["hash"] = hash;
+              message["script_address"] = htlcObject.address;
+              message["pubkey"] = htlcPub;
+              console.log("message:", JSON.stringify(message));
+              var encrypted_message = encrypt(
+                privKey,
+                sellerPubkey,
+                JSON.stringify(message)
+              );
+              if (parsedEvent.fee_type === "absolute") {
+                sessionStorage.expected_invoice_amount =
+                  amount + parsedEvent.fee;
+              } else {
+                sessionStorage.expected_invoice_amount =
+                  amount * ((100 + parsedEvent.fee) / 100);
+              }
+              var acceptEvent = {
+                content: encrypted_message,
+                created_at: Math.floor(Date.now() / 1000),
+                kind: 4,
+                tags: [["p", sellerPubkey]],
+                pubkey: pubKey,
+              };
+
+              var signedOffer = await getSignedEvent(acceptEvent, privKey);
+              //console.log( "is the socket ready?", socket.readyState );
+              //console.log( "is the message ready?", JSON.stringify(['EVENT', signedOffer]) );
+              socket.send(JSON.stringify(["EVENT", signedOffer]));
+            };
+          $(".orderbook").append(div);
+        }
+
+        if (kind === 4) {
+          try {
+            content = decrypt(privKey, event.pubkey, content);
+          } catch (e) {
+            var error = `troll data`;
+          }
+          var div = document.createElement("div");
+          div.className = "ln-inv";
+
+          if (!isValidInvoice(content)) {
+            alert("Seller trolled you, aborting trade!");
+            return;
+          }
+
+          if (
+            getInvoiceAmount(content) !==
+            Number(sessionStorage.expected_invoice_amount)
+          ) {
+            alert("Seller tried to scam you, aborting trade!");
+            return;
+          }
+
+          var qrcode = createQR(content);
+          showPopup(qrcode, content);
+          var htlcArray = JSON.parse(sessionStorage.htlcInfo);
+          await waitForMoneyToArriveInAddress(htlcArray[0]);
+          //TODO VALIDATE THATHE AMOUNT IS RIGHT
+          var tx_array = await addressGotMoneyInThisTx(htlcArray[0]);
+          console.log(tx_array);
+          // document.body.append(div);
+          var txid = tx_array[0];
+          var txindex = tx_array[1];
+          var original_quantity_of_sats = htlcArray[2];
+          var feerate = await getMinFeeRate();
+          var new_quantity_of_sats = original_quantity_of_sats - 200 * feerate;
+          var userPrivkey = htlcArray[4];
+          var serverPubkey = htlcArray[1];
+          var useraddress = htlcArray[6];
+
+          var tx_hex = sweepingHTLC(
+            txid,
+            txindex,
+            original_quantity_of_sats,
+            new_quantity_of_sats,
+            userPrivkey,
+            serverPubkey,
+            htlcArray[3],
+            htlcArray[5],
+            useraddress,
+            htlcArray[7]
+          );
+          console.log(tx_hex);
+          await pushBTCpmt(tx_hex);
+        }
+      });
+
+      var timestamp = Math.floor(Date.now() / 1000);
+      var timeMinusTen = timestamp - 600;
+      var subId = bitcoinjs.ECPair.makeRandom().privateKey.toString("hex");
+      var filter = { kinds: [10042], since: timeMinusTen };
+      var filter2 = { kinds: [4], "#p": [pubKey], since: timestamp - 5 };
+
+      socket.addEventListener("open", async function (e) {
+        console.log("connected to " + relay);
+
+        var subscription = ["REQ", subId, filter, filter2];
+
+        console.log("Subscription:", subscription);
+        socket.send(JSON.stringify(subscription));
+
+        // var offer = {
+        //   offer_id: bitcoinjs.ECPair.makeRandom().privateKey.toString('hex'),
+        //   pubkey: bitcoinjs.ECPair.makeRandom().publicKey.toString('hex'),
+        //   you_send: `lightning sats`,
+        //   i_send: `base layer sats`,
+        //   min_amount: 546,
+        //   max_amount: 1000000,
+        //   fee_type: `percentage`,
+        //   fee: 100,
+        // };
+
+        // var offerEvent = {
+        //   content: JSON.stringify(offer),
+        //   created_at: Math.floor(Date.now() / 1000),
+        //   kind: 10042,
+        //   tags: [],
+        //   pubkey: pubKey,
+        // };
+
+        // var signedOffer = await getSignedEvent(offerEvent, privKey);
+        // socket.send(JSON.stringify(['EVENT', signedOffer]));
+      });
+
+      async function getSignedEvent(event, privateKey) {
+        var eventData = JSON.stringify([
+          0, // Reserved for future use
+          event["pubkey"], // The sender's public key
+          event["created_at"], // Unix timestamp
+          event["kind"], // Message “kind” or type
+          event["tags"], // Tags identify replies/recipients
+          event["content"], // Your note contents
+        ]);
+        event.id = sha256(eventData).toString("hex");
+        event.sig = await schnorr.sign(event.id, privateKey);
+        return event;
+      }
+      //next step: create and validate the swap address on both ends
+      function generateHtlc(serverPubkey, userPubkey, pmthash, timelock) {
+        return bitcoinjs.script.fromASM(
+          `
+              	OP_SHA256
+              	${pmthash}
+              	OP_EQUAL
+              	OP_IF
+                	${userPubkey}
+              	OP_ELSE
+                	${bitcoinjs.script.number.encode(timelock).toString("hex")}
+                	OP_CHECKLOCKTIMEVERIFY
+                	OP_DROP
+                	${serverPubkey}
+              	OP_ENDIF
+              	OP_CHECKSIG
+
+            	`
+            .trim()
+            .replace(/\s+/g, " ")
+        );
+      }
+      async function getBlockheight() {
+        var data = await getData(
+          "https://mempool.space/testnet/api/blocks/tip/height"
+        );
+        return Number(data);
+      }
+      async function getData(url) {
+        var rtext = "";
+        function inner_get(url) {
+          var xhttp = new XMLHttpRequest();
+          xhttp.open("GET", url, true);
+          xhttp.send();
+          return xhttp;
+        }
+        var data = inner_get(url);
+        data.onerror = function (e) {
+          rtext = "error";
+        };
+        async function isResponseReady() {
+          return new Promise(function (resolve, reject) {
+            if (rtext == "error") {
+              resolve(rtext);
+            }
+            if (!data.responseText || data.readyState != 4) {
+              setTimeout(async function () {
+                var msg = await isResponseReady();
+                resolve(msg);
+              }, 50);
+            } else {
+              resolve(data.responseText);
+            }
+          });
+        }
+        var returnable = await isResponseReady();
+        return returnable;
+      }
+
+      function showPopup(qrcode, invoice) {
+        qrcode.style.width = "100%";
+        var popup = document.getElementById("popup");
+        var popupText = document.getElementById("popupText");
+        popup.style.display = "block";
+        popup.prepend(qrcode);
+        popupText.innerText = invoice;
+      }
+
+      function isValidInvoice(invoice) {
+        try {
+          return typeof bolt11.decode(invoice) == "object";
+        } catch (e) {
+          return;
+        }
+      }
+
+      function getInvoiceAmount(invoice) {
+        var decoded = bolt11.decode(invoice);
+        var amount = decoded["satoshis"].toString();
+        return Number(amount);
+      }
+      function createQR(content) {
+        var dataUriPngImage = document.createElement("img"),
+          s = QRCode.generatePNG(content, {
+            ecclevel: "M",
+            format: "html",
+            fillcolor: "#FFFFFF",
+            textcolor: "#000000",
+            margin: 4,
+            modulesize: 8,
+          });
+        dataUriPngImage.src = s;
+        dataUriPngImage.id = "qr_code";
+        return dataUriPngImage;
+      }
+
+      function sweepingHTLC(
+        txid,
+        txindex,
+        original_quantity_of_sats,
+        new_quantity_of_sats,
+        userPrivkey,
+        serverPubkey,
+        preimage,
+        timelock,
+        useraddress,
+        userPubkey
+      ) {
+        console.log(
+          "serverPubkey:",
+          serverPubkey,
+          "userPubkey:",
+          userPubkey,
+          "preimage:",
+          preimage,
+          "timelock:",
+          timelock
+        );
+        var pmthash = bitcoinjs.crypto
+          .sha256(Buffer.from(preimage, "hex"))
+          .toString("hex");
+
+        var witnessscript = generateHtlc(
+          serverPubkey,
+          userPubkey,
+          pmthash,
+          timelock
+        );
+        console.log("witness script:", witnessscript.toString("hex"));
+        var outputscript =
+          "00" + bitcoinjs.crypto.sha256(witnessscript).toString("hex");
+        //  var useraddress = "tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt";
+        var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
+        //  psbt.setLocktime( timelock );
+        psbt.addInput({
+          hash: txid,
+          index: txindex,
+          sequence: 0xfffffffe,
+          witnessUtxo: {
+            script: Buffer.from(
+              "0020" +
+                bitcoinjs.crypto
+                  .sha256(Buffer.from(witnessscript, "hex"))
+                  .toString("hex"),
+              "hex"
+            ),
+            value: original_quantity_of_sats,
+          },
+          witnessScript: Buffer.from(witnessscript, "hex"),
+        });
+        psbt.addOutput({
+          address: useraddress,
+          value: new_quantity_of_sats,
+        });
+        psbt.signInput(
+          0,
+          bitcoinjs.ECPair.fromPrivateKey(Buffer.from(userPrivkey, "hex"))
+        );
+
+        var getFinalScripts = (txindex, input, script) => {
+          // Step 1: Check to make sure the meaningful locking script matches what you expect.
+          var decompiled = bitcoinjs.script.decompile(script);
+          if (!decompiled || decompiled[0] !== bitcoinjs.opcodes.OP_SHA256) {
+            throw new Error(`Can not finalize input #${txindex}`);
+          }
+
+          // Step 2: Create final scripts
+          var witnessStackClaimBranch = bitcoinjs.payments.p2wsh({
+            redeem: {
+              output: script,
+              input: bitcoinjs.script.compile([
+                input.partialSig[0].signature,
+                Buffer.from(preimage, "hex"),
+              ]),
+            },
+          });
+          console.log("First branch witness stack:");
+          console.log(
+            witnessStackClaimBranch.witness.map((x) => x.toString("hex"))
+          );
+          return {
+            finalScriptWitness: witnessStackToScriptWitness(
+              witnessStackClaimBranch.witness
+            ),
+          };
+        };
+        psbt.finalizeInput(0, getFinalScripts);
+        return psbt.extractTransaction().toHex();
+      }
+
+      //this function returns true if the address received money or false if it did not
+      function addressOnceHadMoney(address) {
+        return new Promise(function (resolve, reject) {
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function () {
+            if (
+              this.readyState == 4 &&
+              this.status > 199 &&
+              this.status < 300
+            ) {
+              var json = JSON.parse(xhttp.responseText);
+              if (
+                json["chain_stats"]["funded_txo_count"] > 0 ||
+                json["mempool_stats"]["funded_txo_count"] > 0
+              ) {
+                resolve(true);
+              }
+              resolve(false);
+            }
+          };
+          xhttp.open(
+            "GET",
+            "https://mempool.space/testnet/api/address/" + address,
+            true
+          );
+          xhttp.send();
+        });
+      }
+      //this function waits until money arrives in an address, checking every five seconds, and then returns true -- it never returns false but it can hang forever
+      async function waitForMoneyToArriveInAddress(address) {
+        async function isAddressFundedYet(address) {
+          var address_received_money = await addressOnceHadMoney(address);
+          return new Promise(function (resolve, reject) {
+            if (!address_received_money) {
+              setTimeout(async function () {
+                var msg = await isAddressFundedYet(address);
+                resolve(msg);
+              }, 5000);
+            } else {
+              resolve(address_received_money);
+            }
+          });
+        }
+        async function getTimeoutData() {
+          var address_received_money = await isAddressFundedYet(address);
+          return address_received_money;
+        }
+        var returnable = await getTimeoutData();
+        return returnable;
+      }
+
+      async function addressGotMoneyInThisTx(address) {
+        var vout;
+        var nonjson = await getData(
+          "https://mempool.space/testnet/api/address/" + address + "/txs"
+        );
+        var json = JSON.parse(nonjson);
+        json[0]["vout"].forEach(function (output, index) {
+          if (output["scriptpubkey_address"] == address) vout = index;
+        });
+        return [json[0]["txid"], vout];
+      }
+
+      function getCompressedPubkeyHexFromPrivkeyHex(privkeyhex) {
+        return bitcoinjs.ECPair.fromPrivateKey(Buffer.from(privkeyhex, "hex"), {
+          network: bitcoinjs.networks.testnet,
+        }).publicKey.toString("hex");
+      }
+      async function getMinFeeRate() {
+        var fees = await getData(
+          "https://mempool.space/testnet/api/v1/fees/recommended"
+        );
+        if (!("minimumFee" in fees)) return "error -- site down";
+        var minfee = fees["minimumFee"];
+        return minfee;
+      }
+
+      function witnessStackToScriptWitness(witness) {
+        let buffer2 = Buffer.allocUnsafe(0);
+        function writeSlice(slice) {
+          buffer2 = Buffer.concat([buffer2, Buffer.from(slice)]);
+        }
+        function writeVarInt(i) {
+          const currentLen = buffer2.length;
+          const varintLen = varuintBitcoin.encodingLength(i);
+          buffer2 = Buffer.concat([buffer2, Buffer.allocUnsafe(varintLen)]);
+          varuintBitcoin.encode(i, buffer2, currentLen);
+        }
+        function writeVarSlice(slice) {
+          writeVarInt(slice.length);
+          writeSlice(slice);
+        }
+        function writeVector(vector) {
+          writeVarInt(vector.length);
+          vector.forEach(writeVarSlice);
+        }
+        writeVector(witness);
+        return buffer2;
+      }
+
+      async function pushBTCpmt(rawtx) {
+        var txid = await postData(
+          "https://mempool.space/testnet/api/tx",
+          rawtx
+        );
+        return txid;
+      }
+
+      async function postData(url, json, content_type = "", apikey = "") {
+        var rtext = "";
+        function inner_post(url, json, content_type = "", apikey = "") {
+          var xhttp = new XMLHttpRequest();
+          xhttp.open("POST", url, true);
+          if (content_type) {
+            xhttp.setRequestHeader(`Content-Type`, content_type);
+          }
+          if (apikey) {
+            xhttp.setRequestHeader(`X-Api-Key`, apikey);
+          }
+          xhttp.send(json);
+          return xhttp;
+        }
+        var data = inner_post(url, json, content_type, apikey);
+        data.onerror = function (e) {
+          rtext = "error";
+        };
+        async function isResponseReady() {
+          return new Promise(function (resolve, reject) {
+            if (rtext == "error") {
+              resolve(rtext);
+            }
+            if (!data.responseText || data.readyState != 4) {
+              setTimeout(async function () {
+                var msg = await isResponseReady();
+                resolve(msg);
+              }, 50);
+            } else {
+              resolve(data.responseText);
+            }
+          });
+        }
+        var returnable = await isResponseReady();
+        return returnable;
+      }
+
+      function isValidJson(content) {
+        if (!content) return;
+        try {
+          var json = JSON.parse(content);
+        } catch (e) {
+          return;
+        }
+        return true;
+      }
+
+      function isHex(h) {
+        if (!h) return;
+        var length = h.length;
+        if (length % 2) return;
+        try {
+          var a = BigInt("0x" + h, "hex");
+        } catch (e) {
+          return;
+        }
+        var unpadded = a.toString(16);
+        var padding = [];
+        var i;
+        for (i = 0; i < length; i++) padding.push(0);
+        padding = padding.join("");
+        padding = padding + unpadded.toString();
+        padding = padding.slice(-Math.abs(length));
+        return padding === h;
+      }
+      //VALIDATIOOOOOON
+
+      //Electron/Wrapping
+    </script>
+  </body>
+</html>
