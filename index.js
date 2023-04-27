@@ -585,6 +585,7 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
         return '{"status": "failure", "reason": "The buyer never swept their money so we swept it back"}';
     }
     console.log( "moving on" );
+    await waitSomeSeconds( 3 );
     var txid_that_sweeps_htlc = await addressSentMoneyInThisTx( htlc_address, txid_of_deposit );
     await waitSomeSeconds( 3 );
     var preimage_for_settling_invoice_that_pays_me = await getPreimageFromTransactionThatSpendsAnHTLC( txid_that_sweeps_htlc, users_pmthash );
