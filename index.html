@@ -477,9 +477,10 @@
           console.log(tx_hex);
           $( '.black-bg' ).style.display = "none";
           $( '.modal' ).style.display = "none";
-          alert( `You're almost done! Just click ok when this transaction has 1 confirmation: ${txid}` );
-          await pushBTCpmt(tx_hex);
+          alert( `You're almost done! Just click ok when this transaction has 1 confirmation: https://mempool.space/testnet/tx/${txid}` );
+          var sweep_txid = await pushBTCpmt(tx_hex);
           sessionStorage[ "successful_payment" ] = true;
+          alert( `Your transaction was a success! Here is your txid: https://mempool.space/testnet/tx/${sweep_txid}` );
         }
       }
 
