@@ -85,7 +85,7 @@ function getData( url ) {
     	.then( res => {
         	resolve( res.data );
     	}).catch( function( error ) {
-            console.log( error.message );
+            console.log( `axios error involving url ${url}:`, error.message );
         });
 	});
 }
@@ -97,7 +97,7 @@ function postData( url, json, headers ) {
         .then( res => {
             resolve( res.data );
         }).catch( function( error ) {
-            console.log( error.message );
+            console.log( `axios error involving url ${url} and json ${json}:`, error.message );
         });
     });
 }
@@ -415,7 +415,6 @@ async function addressOnceSentMoney( address ) {
 async function getVout( txid, address, value, network ) {
     var vout = -1;
     var txinfo = await getData( `https://mempool.space/${network}api/tx/${txid}` );
-    txinfo = JSON.parse( txinfo );
     txinfo[ "vout" ].every( function( output, index ) {
         if ( output[ "scriptpubkey_address" ] == address && output[ "value" ] == value ) {vout = index;return;} return true;
     });
@@ -484,19 +483,25 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
     var state_of_held_invoice_with_that_hash = await checkInvoiceStatus( users_pmthash );
     if ( state_of_held_invoice_with_that_hash != "ACCEPTED" ) {
         deal_in_progress = false;
-        var keypair = ECPair.makeRandom();
-        localStorage.setContent( "privkey", keypair.privateKey.toString( 'hex' ) );
-        var offer = {
-            offer_id: ECPair.makeRandom().privateKey.toString('hex'),
-            pubkey: keypair.publicKey.toString( "hex" ),
-            you_send: `lightning sats`,
-            i_send: `base layer sats`,
-            min_amount: min_amount,
-            max_amount: max_amount,
-            fee_type: fee_type,
-            fee: fee,
-        };
-        setPublicNote( JSON.stringify(offer), relay );
+        socket.connect( relay );
+        // async function sendOffer() {
+        //     var keypair = ECPair.makeRandom();
+        //     localStorage.setContent( "privkey", keypair.privateKey.toString( 'hex' ) );
+        //     var offer = {
+        //         offer_id: ECPair.makeRandom().privateKey.toString('hex'),
+        //         pubkey: keypair.publicKey.toString( "hex" ),
+        //         you_send: `lightning sats`,
+        //         i_send: `base layer sats`,
+        //         min_amount: min_amount,
+        //         max_amount: max_amount,
+        //         fee_type: fee_type,
+        //         fee: fee,
+        //     };
+        //     var event_id = await setPublicNote( JSON.stringify(offer), relay );
+        //     console.log( "event id:", event_id, "btckey:", keypair.publicKey.toString( "hex" ) );
+        //     setTimeout( function() {sendOffer();}, 1000 * 60 * 10 );
+        // }
+        // sendOffer();
         return "nice try, asking me to pay an invoice without compensation: " + state_of_held_invoice_with_that_hash;
     }
     var amount_i_will_receive = await getInvoiceAmount( users_pmthash );
@@ -528,7 +533,7 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
     var expiry_of_invoice_that_pays_me = await getInvoiceHardExpiry( users_pmthash );
     var adminmacaroon = adminmac;
     var endpoint = lndendpoint;
-    var feerate = getMinFeeRate();
+    var feerate = await getMinFeeRate();
     let requestBody = {
         addr: htlc_address,
         amount: String( amount ),
@@ -570,13 +575,16 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
     //the output number, the value of the deposit (Number( amount )), the number of confs to wait (40), and an address obtained
     //from lnd to loopTilAddressSendsMoney. Then, when that function loops, it should check how many confs
     //the deposit tx has, and, if it has more than 40, sweep the money to the address obtained from lnd
+    await waitSomeSeconds( 30 );
     var vout = await getVout( txid_of_deposit, htlc_address, Number( amount ), "testnet/" );
+    console.log( "vout:", vout );
     var recovery_address = await getAddress();
     var recovery_info = [localStorage.content[ "privkey" ], txid_of_deposit, vout, Number( amount ), 40, recovery_address];
     var itSentMoney = await loopTilAddressSendsMoney( htlc_address, recovery_info );
     if ( itSentMoney == "recovered" ) {
         return '{"status": "failure", "reason": "The buyer never swept their money so we swept it back"}';
     }
+    console.log( "moving on" );
     var txid_that_sweeps_htlc = await addressSentMoneyInThisTx( htlc_address, txid_of_deposit );
     await waitSomeSeconds( 3 );
     var preimage_for_settling_invoice_that_pays_me = await getPreimageFromTransactionThatSpendsAnHTLC( txid_that_sweeps_htlc, users_pmthash );
@@ -703,7 +711,7 @@ async function checkInvoiceStatus( hash ) {
                           setTimeout( async function() {
                                   time = time + 1;
                                   console.log( "time:", time )
-                                  if ( time == 1000 ) {
+                                  if ( time == 1000 || time > 1000 ) {
                                     resolve( "failure" );
                                     return;
                                   }
@@ -986,12 +994,12 @@ async function getPreimageFromTransactionThatSpendsAnHTLC( txid, pmthash ) {
 
 var offers = {};
 
-socket.on( 'connect', async function( connection ) {
-	console.log( "connected to nostr relay " + relay );
-	connection.on( 'error', function( error ) {
-    	console.log( error );
-	});
-	connection.on( 'message', async function( message ) {
+async function openConnection( connection ) {
+    console.log( "connected to nostr relay " + relay );
+    connection.on( 'error', function( error ) {
+        console.log( error );
+    });
+    connection.on( 'message', async function( message ) {
         var [type, subId, event] = JSON.parse(message.utf8Data);
         var { kind, content } = event || {};
         if (!event) return;
@@ -1105,7 +1113,7 @@ socket.on( 'connect', async function( connection ) {
           console.log( message );
           deal_in_progress = false;
         }
-	});
+    });
     var timestamp = Math.floor(Date.now() / 1000);
     var timeMinusTen = timestamp - 600;
     var subId = ECPair.makeRandom().privateKey.toString( "hex" );
@@ -1113,7 +1121,7 @@ socket.on( 'connect', async function( connection ) {
     var filter2 = { kinds: [10042], authors: [pubKeyMinus2], since: timeMinusTen };
     var subscription = [ "REQ", subId, filter, filter2 ];
     subscription = JSON.stringify( subscription );
-	setTimeout( function() {connection.sendUTF( subscription );}, 1000 );
+    setTimeout( function() {connection.sendUTF( subscription );}, 1000 );
 
     async function sendOffer() {
         var keypair = ECPair.makeRandom();
@@ -1141,8 +1149,9 @@ socket.on( 'connect', async function( connection ) {
         if ( !deal_in_progress ) setTimeout( function() {sendOffer();}, 1000 * 60 * 10 );
     }
     sendOffer();
-});
+}
 
+socket.on( 'connect', openConnection );
 socket.connect( relay );
 
 function isValidJson( content ) {
