@@ -41,7 +41,7 @@ var pubKeyMinus2 = nobleSecp256k1.getPublicKey( privKey, true ).substring( 2 );
 console.log( "my privkey:", privKey );
 console.log( "my pubkey:", pubKeyMinus2 );
 function normalizeRelayURL(e){let[t,...r]=e.trim().split("?");return"http"===t.slice(0,4)&&(t="ws"+t.slice(4)),"ws"!==t.slice(0,2)&&(t="wss://"+t),t.length&&"/"===t[t.length-1]&&(t=t.slice(0,-1)),[t,...r].join("?")}
-var relay = "wss://offchain.pub";
+var relay = "wss://relay1.nostrchat.io";
 // var relay = "ws://192.168.1.4:6969";
 relay = normalizeRelayURL( relay );
 var deal_in_progress = false;
@@ -1109,7 +1109,7 @@ socket.on( 'connect', async function( connection ) {
     var timestamp = Math.floor(Date.now() / 1000);
     var timeMinusTen = timestamp - 600;
     var subId = ECPair.makeRandom().privateKey.toString( "hex" );
-    var filter = { kinds: [4], since: timeMinusTen };
+    var filter = { kinds: [4], "#p": [pubKeyMinus2], since: timeMinusTen };
     var filter2 = { kinds: [10042], authors: [pubKeyMinus2], since: timeMinusTen };
     var subscription = [ "REQ", subId, filter, filter2 ];
     subscription = JSON.stringify( subscription );
