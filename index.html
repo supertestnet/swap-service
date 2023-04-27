@@ -48,7 +48,33 @@
       .offer .fill_in_details {
         display: none;
       }
-
+      .black-bg {
+        display: none;
+        width: 100%;
+        position: fixed;
+        top: 0;
+        left: 0;
+        background-color: black;
+        opacity: .5;
+        width: 100vw;
+        height: 100vh;
+      }
+      .modal {
+          display: none;
+          position: fixed;
+          box-sizing: border-box;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%,-50%);
+          width: 100%;
+          max-width: 560px;
+          background-color: white;
+          border-radius: 1rem;
+          padding: 20px;
+          color: black;
+          text-align: center;
+          word-wrap: break-word;
+      }
       #popup {
         display: none;
         position: absolute;
@@ -65,6 +91,12 @@
       }
     </style>
     <script>
+      sessionStorage.clear();
+      function modalVanish() {
+        $( ".black-bg" ).style.display = "none";
+        $( ".modal" ).style.display = "none";
+      }
+
       function hexToBytes(hex) {
         return Uint8Array.from(
           hex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
@@ -164,7 +196,7 @@
       // var relay = "ws://192.168.1.4:6969";
       var socket = new WebSocket(relay);
 
-      socket.addEventListener("message", async function (message) {
+      async function handleMessage(message) {
         var [type, subId, event] = JSON.parse(message.data);
         var { kind, content } = event || {};
 
@@ -219,30 +251,30 @@
           var fee_suffix = "%";
           if (content.fee_type == "absolute") fee_suffix = " sats";
           div.innerHTML = `<div class="offer">
-             		<div>You send LN sats</div>
-             		<div>You receive Base Layer sats</div>
-             		<div>Minimum amount: <span class="min_amt"></span> sats</div>
-             		<div>Maximum amount: <span class="max_amt"></span> sats</div>
-             		<div>Fee: <span class="fee"></span></div>
-             		<div class="accept_offer"><button>Accept offer</button></div>
-             		<div class="fill_in_details">
-             			<p>
-             				Enter an amount of sats you want to receive
-             			</p>
-             			<p>
-             				<input type="number" step="1" class="enter_amount">
-             			</p>
-             			<p>
-             				Enter a bitcoin address where you want to receive the money
-             			</p>
-             			<p>
-             				<input class="enter_address">
-             			</p>
-             			<p>
-             				<button class="finalize_acceptance">Submit</button>
-             			</p>
-             		</div>
-             	</div>`;
+                <div>You send LN sats</div>
+                <div>You receive Base Layer sats</div>
+                <div>Minimum amount: <span class="min_amt"></span> sats</div>
+                <div>Maximum amount: <span class="max_amt"></span> sats</div>
+                <div>Fee: <span class="fee"></span></div>
+                <div class="accept_offer"><button>Accept offer</button></div>
+                <div class="fill_in_details">
+                  <p>
+                    Enter an amount of sats you want to receive
+                  </p>
+                  <p>
+                    <input type="number" step="1" class="enter_amount">
+                  </p>
+                  <p>
+                    Enter a bitcoin address where you want to receive the money
+                  </p>
+                  <p>
+                    <input class="enter_address">
+                  </p>
+                  <p>
+                    <button class="finalize_acceptance">Submit</button>
+                  </p>
+                </div>
+              </div>`;
           div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-pubkey", event.pubkey );
           div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-offer_id", content.offer_id );
           div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-btckey", content.pubkey );
@@ -263,6 +295,7 @@
           };
           div.getElementsByClassName("finalize_acceptance")[0].onclick =
             async function () {
+              sessionStorage.removeItem( "successful_payment" );
               var sellerPubkey =
                 this.parentElement.parentElement.parentElement.getAttribute(
                   "data-pubkey"
@@ -398,23 +431,31 @@
             return;
           }
 
-          var qrcode = createQR(content);
-          showPopup(qrcode, content);
+          var qrdiv = document.createElement( "div" );
+          qrdiv.append( createQR(content) );
+          var qrhtml = qrdiv.innerHTML;
+          var html = qrhtml;
+          html += `<p>${content}</p>`;
+          showModal( html );
+          // showPopup(qrcode, content);
           var htlcArray = JSON.parse(sessionStorage.htlcInfo);
-          await waitForMoneyToArriveInAddress(htlcArray[0]);
-          var tx_array = await addressGotMoneyInThisTx(htlcArray[0]);
+          var waitIsOver = await waitForMoneyToArriveInAddress(htlcArray[0]);
+          sessionStorage.removeItem( "alert_sent" );
+          if ( waitIsOver == "failure" ) return;
+          var tx_array = await addressReceivedMoneyInThisTx(htlcArray[0]);
           console.log(tx_array);
           // document.body.append(div);
           var txid = tx_array[0];
           var txindex = tx_array[1];
           var amount_received = tx_array[2];
+          var amount_expected = htlcArray[2];
           if (
-            amount_received !== original_quantity_of_sats
+            amount_received !== amount_expected
           ) {
-            alert("Seller tried to scam you, aborting trade!");
+            alert("Seller tried to scam you, aborting trade! Amount received: " + amount_received + " Amount expected: " + amount_expected, " Equality: " + amount_received === amount_expected );
             return;
           }
-          var original_quantity_of_sats = htlcArray[2];
+          var original_quantity_of_sats = amount_expected;
           var feerate = await getMinFeeRate();
           var new_quantity_of_sats = original_quantity_of_sats - 200 * feerate;
           var userPrivkey = htlcArray[4];
@@ -434,9 +475,15 @@
             htlcArray[7]
           );
           console.log(tx_hex);
+          $( '.black-bg' ).style.display = "none";
+          $( '.modal' ).style.display = "none";
+          alert( `You're almost done! Just click ok when this transaction has 1 confirmation: ${txid}` );
           await pushBTCpmt(tx_hex);
+          sessionStorage[ "successful_payment" ] = true;
         }
-      });
+      }
+
+      socket.addEventListener( "message", handleMessage );
 
       var timestamp = Math.floor(Date.now() / 1000);
       var timeMinusTen = timestamp - 600;
@@ -444,36 +491,14 @@
       var filter = { kinds: [10042], since: timeMinusTen };
       var filter2 = { kinds: [4], "#p": [pubKey], since: timestamp - 5 };
 
-      socket.addEventListener("open", async function (e) {
+      async function openConnection() {
         console.log("connected to " + relay);
-
         var subscription = ["REQ", subId, filter, filter2];
-
         console.log("Subscription:", subscription);
         socket.send(JSON.stringify(subscription));
+      }
 
-        // var offer = {
-        //   offer_id: bitcoinjs.ECPair.makeRandom().privateKey.toString('hex'),
-        //   pubkey: bitcoinjs.ECPair.makeRandom().publicKey.toString('hex'),
-        //   you_send: `lightning sats`,
-        //   i_send: `base layer sats`,
-        //   min_amount: 546,
-        //   max_amount: 1000000,
-        //   fee_type: `percentage`,
-        //   fee: 100,
-        // };
-
-        // var offerEvent = {
-        //   content: JSON.stringify(offer),
-        //   created_at: Math.floor(Date.now() / 1000),
-        //   kind: 10042,
-        //   tags: [],
-        //   pubkey: pubKey,
-        // };
-
-        // var signedOffer = await getSignedEvent(offerEvent, privKey);
-        // socket.send(JSON.stringify(['EVENT', signedOffer]));
-      });
+      socket.addEventListener("open", openConnection );
 
       async function getSignedEvent(event, privateKey) {
         var eventData = JSON.stringify([
@@ -548,6 +573,7 @@
       }
 
       function showPopup(qrcode, invoice) {
+        $( '.black-bg' ).style.display = "block";
         qrcode.style.width = "100%";
         var popup = document.getElementById("popup");
         var popupText = document.getElementById("popupText");
@@ -581,6 +607,8 @@
           });
         dataUriPngImage.src = s;
         dataUriPngImage.id = "qr_code";
+        dataUriPngImage.style.width = "100%";
+        dataUriPngImage.style.maxWidth = "20rem";
         return dataUriPngImage;
       }
 
@@ -708,7 +736,19 @@
       }
       //this function waits until money arrives in an address, checking every five seconds, and then returns true -- it never returns false but it can hang forever
       async function waitForMoneyToArriveInAddress(address) {
+        sessionStorage[ "waiting_for_payment" ] = true;
         async function isAddressFundedYet(address) {
+          if ( sessionStorage[ "waiting_for_payment" ] ) {
+            setTimeout( function() {
+              if ( !sessionStorage[ "successful_payment" ] && !sessionStorage[ "alert_sent" ] ) {
+                modalVanish();
+                alert( `Looks like you didn't pay in time. Please try again.` );
+                sessionStorage[ "alert_sent" ] = true;
+                sessionStorage.removeItem( "waiting_for_payment" );
+                resolve( "failure" );
+              }
+            }, 200000 );
+          }
           var address_received_money = await addressOnceHadMoney(address);
           return new Promise(function (resolve, reject) {
             if (!address_received_money) {
@@ -756,9 +796,16 @@
         var fees = await getData(
           "https://mempool.space/testnet/api/v1/fees/recommended"
         );
+        fees = JSON.parse( fees );
         if (!("minimumFee" in fees)) return "error -- site down";
         var minfee = fees["minimumFee"];
         return minfee;
+      }
+      function showModal( content ) {
+        $( ".modal" ).innerHTML = `<div style="position: absolute;right: 1rem;top: 0.5rem;font-size: 2rem; cursor: pointer;" onclick="modalVanish()">&times;</div>`;
+        $( ".modal" ).innerHTML += `<div style="overflow-y: scroll; max-height: 80vh; margin-top: 1.5rem;">${content}</div>`;
+        $( ".black-bg" ).style.display = "block";
+        $( ".modal" ).style.display = "block";
       }
 
       function witnessStackToScriptWitness(witness) {
@@ -857,9 +904,23 @@
         padding = padding.slice(-Math.abs(length));
         return padding === h;
       }
-      //VALIDATIOOOOOON
+      function checkHeartbeat() {
+        setTimeout( () => {
+          if ( socket.readyState != 1 ) {
+            socket.removeEventListener( 'open', openConnection );
+            socket.removeEventListener( 'message', handleMessage );
+            socket = new WebSocket( relay );
+            socket.addEventListener( 'message', handleMessage );
+            socket.addEventListener( 'open', openConnection );
+          }
+          checkHeartbeat();
+        }, 2000 );
+      }
+      checkHeartbeat();
 
       //Electron/Wrapping
     </script>
+    <div class="black-bg" onclick="modalVanish();"></div>
+    <div class="modal"></div>
   </body>
 </html>
