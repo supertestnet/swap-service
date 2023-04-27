@@ -1,20 +1,33 @@
-import * as ws from "websocket";
-var WebSocketClient = ws.default.client;
-import * as bcipher from "browserify-cipher";
-var browserifyCipher = bcipher.default;
-import * as nobleSecp256k1 from "noble-secp256k1";
-import * as cr from "crypto";
-var crypto = cr.default;
-var socket = new WebSocketClient();
-import * as ax from "axios";
-var axios = ax.default;
-import * as bitcoinjs from "bitcoinjs-lib";
-import * as rq from "request";
-var request = rq.default;
-import { ECPairFactory } from 'ecpair';
-import * as tinysecp from 'tiny-secp256k1';
-const ECPair = ECPairFactory(tinysecp);
-import * as bolt11 from 'bolt11';
+const ws = require('websocket')
+const WebSocketClient = ws.client;
+const browserifyCipher = require('browserify-cipher')
+const nobleSecp256k1 = require('noble-secp256k1')
+const crypto = require('crypto')
+const socket = new WebSocketClient();
+const axios = require('axios')
+const bitcoinjs = require('bitcoinjs-lib')
+const request = require('request')
+const { ECPairFactory } = require('ecpair')
+const tinysecp = require('tiny-secp256k1')
+const ECPair = ECPairFactory(tinysecp)
+const bolt11 = require('bolt11')
+const fs = require('fs')
+// import * as ws from "websocket";
+// var WebSocketClient = ws.default.client;
+// import * as bcipher from "browserify-cipher";
+// var browserifyCipher = bcipher.default;
+// import * as nobleSecp256k1 from "noble-secp256k1";
+// import * as cr from "crypto";
+// var crypto = cr.default;
+// import * as ax from "axios";
+// var axios = ax.default;
+// import * as bitcoinjs from "bitcoinjs-lib";
+// import * as rq from "request";
+// var request = rq.default;
+// import { ECPairFactory } from 'ecpair';
+// import * as tinysecp from 'tiny-secp256k1';
+// const ECPair = ECPairFactory(tinysecp);
+// import * as bolt11 from 'bolt11';
 
 //testnet only
 
@@ -25,16 +38,45 @@ var lndendpoint = "http://localhost:7012";
 //var privKey = "48af5b91b2eb1cab92c7243cf105adc39257fe986da28eb06c33faf3e8704ea7";
 var privKey = ECPair.makeRandom().privateKey.toString( "hex" );
 var pubKeyMinus2 = nobleSecp256k1.getPublicKey( privKey, true ).substring( 2 );
+console.log( "my privkey:", privKey );
 console.log( "my pubkey:", pubKeyMinus2 );
 function normalizeRelayURL(e){let[t,...r]=e.trim().split("?");return"http"===t.slice(0,4)&&(t="ws"+t.slice(4)),"ws"!==t.slice(0,2)&&(t="wss://"+t),t.length&&"/"===t[t.length-1]&&(t=t.slice(0,-1)),[t,...r].join("?")}
-//var relay = "wss://nostr.zebedee.cloud";
-var relay = "ws://192.168.1.4:6969";
+var relay = "wss://offchain.pub";
+// var relay = "ws://192.168.1.4:6969";
 relay = normalizeRelayURL( relay );
 var deal_in_progress = false;
 var min_amount = 546;
 var max_amount = 1000000;
 var fee_type = `percentage`;
 var fee = 5;
+
+class ls {
+  constructor(content) {
+    this.content = {}
+  }
+  setContent( key, value ) {
+    this.content[ key ] = value;
+    var texttowrite = JSON.stringify( this.content );
+    fs.writeFileSync( "localStorage.txt", texttowrite, function() {return;});
+  }
+  removeItem( key ) {
+    delete this.content[ key ];
+    var texttowrite = JSON.stringify( this.content );
+    fs.writeFileSync( "localStorage.txt", texttowrite, function() {return;});
+  }
+}
+
+var localStorage = new ls();
+
+if ( !fs.existsSync( "localStorage.txt" ) ) {
+  var texttowrite = JSON.stringify( localStorage.content );
+  fs.writeFileSync( "localStorage.txt", texttowrite, function() {return;});
+} else {
+  var lstext = fs.readFileSync( "localStorage.txt" ).toString();
+  localStorage.content = JSON.parse( lstext );
+  var texttowrite = JSON.stringify( localStorage.content );
+  fs.writeFileSync( "localStorage.txt", texttowrite, function() {return;});
+}
 
 function getData( url ) {
 	return new Promise( function( resolve, reject ) {
@@ -91,6 +133,48 @@ function generateHtlc(serverPubkey, userPubkey, pmthash, timelock) {
        .trim()
        .replace(/\s+/g, ' ')
    );
+}
+
+function recoverSats( senderPrivkey, inputtxid, inputindex, fromamount, toaddress, toamount, sequence_number ) {
+    var keyPairSender = bitcoinjs.ECPair.fromPrivateKey( Buffer.from( senderPrivkey, 'hex' ), bitcoinjs.networks.testnet );
+    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet })
+    .addInput({
+        hash: inputtxid,
+        index: inputindex,
+        sequence: Number( sequence_number ),
+        witnessUtxo: {
+            script: Buffer.from( "0014" + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( keyPairSender.publicKey ) ).toString( "hex" ), "hex" ),
+            value: fromamount,
+        },
+    })
+    .addOutput({
+        address: toaddress,
+        value: toamount,
+    });
+    var getFinalScripts = ( txindex, input, script ) => {
+        // Step 1: Check to make sure the meaningful locking script matches what you expect.
+        var decompiled = bitcoinjs.script.decompile( script )
+        if ( !decompiled ) {
+            throw new Error( `Can not finalize input #${txindex}` )
+        }
+
+        // Step 2: Create final scripts
+        var witnessStack = bitcoinjs.payments.p2wsh({
+            redeem: {
+                output: script,
+                input: bitcoinjs.script.compile([
+                    input.partialSig[0].signature,
+                    Buffer.from( "", "hex" ),
+                 ]),
+            }
+        });
+        return {
+            finalScriptWitness: witnessStackToScriptWitness( witnessStack.witness )
+        }
+    }
+    psbt.signInput( 0, ECPair.fromPrivateKey( Buffer.from( senderPrivkey, "hex" ) ) );
+    psbt.finalizeInput( 0, getFinalScripts );
+    return psbt.extractTransaction().toHex();
 }
 
 function getSwapAddress( serverPubkey, userPubkey, pmthash, timelock ) {
@@ -231,6 +315,8 @@ async function settleHoldInvoice( preimage ) {
   }
   let options = {
     url: endpoint + '/v2/invoices/settle',
+    // Work-around for self-signed certificates.
+    rejectUnauthorized: false,
     json: true,
     headers: {
       'Grpc-Metadata-macaroon': macaroon,
@@ -264,6 +350,60 @@ async function settleHoldInvoice( preimage ) {
     return returnable;   
 }
 
+async function howManyConfs( txid ) {
+    var blockheight = await getBlockheight();
+    return new Promise( async function( resolve, reject ) {
+        var json = await getData( `https://mempool.space/testnet/api/tx/` + txid );
+        if ( json[ "status" ][ "confirmed" ] ) {
+            resolve( ( Number( blockheight ) - Number( json[ "status" ][ "block_height" ] ) ) + 1 );
+        } else {
+            resolve( "0".toString() );
+        }
+    });
+}
+
+async function getAddress() {
+  var address = "";
+  var macaroon = invoicemac;
+  var endpoint = lndendpoint + "/v2/wallet/address/next";
+  let requestBody = {
+    account: "",
+    type: 1,
+    change: false,
+  };
+  let options = {
+    url: endpoint,
+    // Work-around for self-signed certificates.
+    rejectUnauthorized: false,
+    json: true,
+    headers: {
+      'Grpc-Metadata-macaroon': macaroon,
+    },
+    form: JSON.stringify(requestBody),
+  }
+  request.post(options, function(error, response, body) {
+    address = body[ "addr" ];
+  });
+  async function isNoteSetYet( note_i_seek ) {
+        return new Promise( function( resolve, reject ) {
+            if ( !note_i_seek ) {
+                setTimeout( async function() {
+                    var msg = await isNoteSetYet( address );
+                    resolve( msg );
+                }, 100 );
+            } else {
+                resolve( note_i_seek );
+            }
+        });
+    }
+    async function getTimeoutData() {
+            var address_i_seek = await isNoteSetYet( address );
+            return address_i_seek;
+    }
+    var returnable = await getTimeoutData();
+    return returnable;
+}
+
 async function addressOnceSentMoney( address ) {
     var json = await getData( "https://mempool.space/testnet/api/address/" + address );
     if ( json[ "chain_stats" ][ "spent_txo_count" ] > 0 || json[ "mempool_stats" ][ "spent_txo_count" ] > 0 ) {
@@ -272,12 +412,34 @@ async function addressOnceSentMoney( address ) {
     return false;
 }
 
-async function loopTilAddressSendsMoney( address ) {
+async function getVout( txid, address, value, network ) {
+    var vout = -1;
+    var txinfo = await getData( `https://mempool.space/${network}api/tx/${txid}` );
+    txinfo = JSON.parse( txinfo );
+    txinfo[ "vout" ].every( function( output, index ) {
+        if ( output[ "scriptpubkey_address" ] == address && output[ "value" ] == value ) {vout = index;return;} return true;
+    });
+    return vout;
+}
+
+async function loopTilAddressSendsMoney( address, recovery_info ) {
+    var [ privkey, txid, vout, amount, confs_to_wait, recovery_address ] = recovery_info;
+    //localStorage.content[ "privkey" ], txid_of_deposit, vout, Number( amount ), 40, recovery_address
     var itSpentMoney = false;
     async function isDataSetYet( data_i_seek ) {
         return new Promise( function( resolve, reject ) {
             if ( !data_i_seek ) {
                 setTimeout( async function() {
+                    //check how many confs the deposit tx has
+                    var confs = await howManyConfs( txid );
+                    console.log( confs );
+                    if ( Number( confs ) > 39 ) {
+                        console.log( "time to sweep!" );
+                        //sweep the deposit into the recovery address
+                        var recovery_tx = recoverSats( privkey, txid, vout, amount, recovery_address, amount - 500, 40 );
+                        await pushBTCpmt( recovery_tx );
+                        resolve( "recovered" );
+                    }
                     console.log( "checking for preimage in mempool..." );
                     itSpentMoney = await addressOnceSentMoney( address );
                     var msg = await isDataSetYet( itSpentMoney );
@@ -311,15 +473,22 @@ async function addressSentMoneyInThisTx( address, txid_of_deposit ) {
     return txid;
 }
 
+async function pushBTCpmt( rawtx, network ) {
+    var txid = await postData( "https://mempool.space/" + network + "api/tx", rawtx );
+    return txid;
+}
+
 async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
     var txid_of_deposit = "";
     var users_pmthash = getinvoicepmthash( invoice );
     var state_of_held_invoice_with_that_hash = await checkInvoiceStatus( users_pmthash );
     if ( state_of_held_invoice_with_that_hash != "ACCEPTED" ) {
         deal_in_progress = false;
+        var keypair = ECPair.makeRandom();
+        localStorage.setContent( "privkey", keypair.privateKey.toString( 'hex' ) );
         var offer = {
             offer_id: ECPair.makeRandom().privateKey.toString('hex'),
-            pubkey: ECPair.makeRandom().publicKey.toString('hex'),
+            pubkey: keypair.publicKey.toString( "hex" ),
             you_send: `lightning sats`,
             i_send: `base layer sats`,
             min_amount: min_amount,
@@ -367,6 +536,8 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
     }
     let options = {
         url: endpoint + '/v1/transactions',
+        // Work-around for self-signed certificates.
+        rejectUnauthorized: false,
         json: true,
         headers: {
           'Grpc-Metadata-macaroon': adminmacaroon,
@@ -395,7 +566,17 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
         return data_i_seek;
     }
     //todo: while looping, if address doesn't send money before timelock expires, sweep money back to self
-    var itSentMoney = await loopTilAddressSendsMoney( htlc_address );
+    //to do that, I must send the privkey (localStorage.content[ "privkey" ]), the txid (txid_of_deposit),
+    //the output number, the value of the deposit (Number( amount )), the number of confs to wait (40), and an address obtained
+    //from lnd to loopTilAddressSendsMoney. Then, when that function loops, it should check how many confs
+    //the deposit tx has, and, if it has more than 40, sweep the money to the address obtained from lnd
+    var vout = await getVout( txid_of_deposit, htlc_address, Number( amount ), "testnet/" );
+    var recovery_address = await getAddress();
+    var recovery_info = [localStorage.content[ "privkey" ], txid_of_deposit, vout, Number( amount ), 40, recovery_address];
+    var itSentMoney = await loopTilAddressSendsMoney( htlc_address, recovery_info );
+    if ( itSentMoney == "recovered" ) {
+        return '{"status": "failure", "reason": "The buyer never swept their money so we swept it back"}';
+    }
     var txid_that_sweeps_htlc = await addressSentMoneyInThisTx( htlc_address, txid_of_deposit );
     await waitSomeSeconds( 3 );
     var preimage_for_settling_invoice_that_pays_me = await getPreimageFromTransactionThatSpendsAnHTLC( txid_that_sweeps_htlc, users_pmthash );
@@ -431,6 +612,8 @@ async function getInvoiceAmount( hash ) {
   const endpoint = lndendpoint;
   let options = {
     url: endpoint + '/v1/invoice/' + hash,
+    // Work-around for self-signed certificates.
+    rejectUnauthorized: false,
     json: true,
     headers: {
       'Grpc-Metadata-macaroon': macaroon,
@@ -465,6 +648,8 @@ async function checkInvoiceStatusWithoutLoop( hash ) {
   const endpoint = lndendpoint;
   let options = {
     url: endpoint + '/v1/invoice/' + hash,
+    // Work-around for self-signed certificates.
+    rejectUnauthorized: false,
     json: true,
     headers: {
       'Grpc-Metadata-macaroon': macaroon,
@@ -500,6 +685,8 @@ async function checkInvoiceStatus( hash ) {
   const endpoint = lndendpoint;
   let options = {
     url: endpoint + '/v1/invoice/' + hash,
+    // Work-around for self-signed certificates.
+    rejectUnauthorized: false,
     json: true,
     headers: {
       'Grpc-Metadata-macaroon': macaroon,
@@ -544,6 +731,8 @@ async function getInvoiceCreationTimestamp( hash ) {
   const endpoint = lndendpoint;
   let options = {
     url: endpoint + '/v1/invoice/' + hash,
+    // Work-around for self-signed certificates.
+    rejectUnauthorized: false,
     json: true,
     headers: {
       'Grpc-Metadata-macaroon': macaroon,
@@ -578,6 +767,8 @@ async function getInvoiceHardExpiry( hash ) {
   const endpoint = lndendpoint;
   let options = {
     url: endpoint + '/v1/invoice/' + hash,
+    // Work-around for self-signed certificates.
+    rejectUnauthorized: false,
     json: true,
     headers: {
       'Grpc-Metadata-macaroon': macaroon,
@@ -857,10 +1048,12 @@ socket.on( 'connect', async function( connection ) {
           var timelock = blockHeight + 10;
           //console.log(offers + eventContent.offer_id);
           try {
-            var offerPubkey = offers[eventContent.offer_id]['pubkey'];            
+            var offerPubkey = offers[eventContent.offer_id]['pubkey'];
           } catch( e ) {
             return "no matching pubkey, you probably restarted the app";
           }
+          //ensure the offer pubkey corresponds to a private key you "own";
+          if ( offerPubkey != nobleSecp256k1.getPublicKey( localStorage.content[ "privkey" ], true ) ) return;
           //now we validate that the acceptance message is within the ranges
           //offered by our offer
           if ( jsonAmount < offers[eventContent.offer_id]['min_amount'] ) return;
@@ -923,9 +1116,11 @@ socket.on( 'connect', async function( connection ) {
 	setTimeout( function() {connection.sendUTF( subscription );}, 1000 );
 
     async function sendOffer() {
+        var keypair = ECPair.makeRandom();
+        localStorage.setContent( "privkey", keypair.privateKey.toString( 'hex' ) );
         var offer = {
             offer_id: ECPair.makeRandom().privateKey.toString('hex'),
-            pubkey: ECPair.makeRandom().publicKey.toString('hex'),
+            pubkey: keypair.publicKey.toString('hex'),
             min_amount: min_amount,
             max_amount: max_amount,
             fee_type: fee_type,
