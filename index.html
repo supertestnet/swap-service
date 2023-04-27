@@ -160,7 +160,7 @@
       var pubKey =
         "659636f537c5efd513d484efdd3571a3db8753e93ee4b16339f965fcbf5f2178";
       console.log(pubKey);
-      var relay = "wss://offchain.pub";
+      var relay = "wss://relay1.nostrchat.io";
       // var relay = "ws://192.168.1.4:6969";
       var socket = new WebSocket(relay);
 
@@ -243,9 +243,9 @@
              			</p>
              		</div>
              	</div>`;
-          div.setAttribute( "data-pubkey", event.pubkey );
-          div.setAttribute( "data-offer_id", content.offer_id );
-          div.setAttribute( "data-btckey", content.pubkey );
+          div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-pubkey", event.pubkey );
+          div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-offer_id", content.offer_id );
+          div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-btckey", content.pubkey );
           div.getElementsByClassName("min_amt")[0].innerText = content.min_amount.toLocaleString();
           div.getElementsByClassName("max_amt")[0].innerText = content.max_amount.toLocaleString();
           div.getElementsByClassName("fee")[0].innerText = String(content.fee) + fee_suffix;
