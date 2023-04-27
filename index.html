@@ -160,7 +160,8 @@
       var pubKey =
         "659636f537c5efd513d484efdd3571a3db8753e93ee4b16339f965fcbf5f2178";
       console.log(pubKey);
-      var relay = "ws://192.168.1.4:6969";
+      var relay = "wss://offchain.pub";
+      // var relay = "ws://192.168.1.4:6969";
       var socket = new WebSocket(relay);
 
       socket.addEventListener("message", async function (message) {
@@ -212,23 +213,17 @@
 
           if (typeof parsedEvent.fee !== "number") return;
           if (parsedEvent.fee < 0) return;
-
           content = JSON.parse(content);
+          if ( $( `.offer[ data-pubkey="${event.pubkey}" ]` ) ) $( `.offer[ data-pubkey="${event.pubkey}" ]` ).remove();
           var div = document.createElement("div");
           var fee_suffix = "%";
           if (content.fee_type == "absolute") fee_suffix = " sats";
-          div.innerHTML = `<div class="offer" data-pubkey="${
-            event.pubkey
-          }" data-offer_id="${content.offer_id}" data-btckey="${
-            content.pubkey
-          }">
+          div.innerHTML = `<div class="offer">
              		<div>You send LN sats</div>
              		<div>You receive Base Layer sats</div>
-             		<div>Minimum amount: <span class="min_amt">${content.min_amount.toLocaleString()}</span> sats</div>
-             		<div>Maximum amount: <span class="max_amt">${content.max_amount.toLocaleString()}</span> sats</div>
-             		<div>Fee: <span class="fee">${
-                  String(content.fee) + fee_suffix
-                }</span></div>
+             		<div>Minimum amount: <span class="min_amt"></span> sats</div>
+             		<div>Maximum amount: <span class="max_amt"></span> sats</div>
+             		<div>Fee: <span class="fee"></span></div>
              		<div class="accept_offer"><button>Accept offer</button></div>
              		<div class="fill_in_details">
              			<p>
@@ -248,6 +243,12 @@
              			</p>
              		</div>
              	</div>`;
+          div.setAttribute( "data-pubkey", event.pubkey );
+          div.setAttribute( "data-offer_id", content.offer_id );
+          div.setAttribute( "data-btckey", content.pubkey );
+          div.getElementsByClassName("min_amt")[0].innerText = content.min_amount.toLocaleString();
+          div.getElementsByClassName("max_amt")[0].innerText = content.max_amount.toLocaleString();
+          div.getElementsByClassName("fee")[0].innerText = String(content.fee) + fee_suffix;
           div.getElementsByClassName("accept_offer")[0].onclick = function () {
             var pubkey = this.parentElement.getAttribute("data-pubkey");
             this.parentElement.getElementsByClassName(
@@ -401,12 +402,18 @@
           showPopup(qrcode, content);
           var htlcArray = JSON.parse(sessionStorage.htlcInfo);
           await waitForMoneyToArriveInAddress(htlcArray[0]);
-          //TODO VALIDATE THATHE AMOUNT IS RIGHT
           var tx_array = await addressGotMoneyInThisTx(htlcArray[0]);
           console.log(tx_array);
           // document.body.append(div);
           var txid = tx_array[0];
           var txindex = tx_array[1];
+          var amount_received = tx_array[2];
+          if (
+            amount_received !== original_quantity_of_sats
+          ) {
+            alert("Seller tried to scam you, aborting trade!");
+            return;
+          }
           var original_quantity_of_sats = htlcArray[2];
           var feerate = await getMinFeeRate();
           var new_quantity_of_sats = original_quantity_of_sats - 200 * feerate;
@@ -722,16 +729,22 @@
         return returnable;
       }
 
-      async function addressGotMoneyInThisTx(address) {
-        var vout;
-        var nonjson = await getData(
-          "https://mempool.space/testnet/api/address/" + address + "/txs"
-        );
-        var json = JSON.parse(nonjson);
-        json[0]["vout"].forEach(function (output, index) {
-          if (output["scriptpubkey_address"] == address) vout = index;
+      async function addressReceivedMoneyInThisTx(address) {
+        let txid;
+        let vout;
+        let amt;
+        let nonjson = await getData("https://mempool.space/testnet/api/address/" + address + "/txs");
+        let json = JSON.parse(nonjson);
+        json.forEach(function (tx) {
+          tx["vout"].forEach(function (output, index) {
+            if (output["scriptpubkey_address"] == address) {
+              txid = tx["txid"];
+              vout = index;
+              amt = output["value"];
+            }
+          });
         });
-        return [json[0]["txid"], vout];
+        return [txid, vout, amt];
       }
 
       function getCompressedPubkeyHexFromPrivkeyHex(privkeyhex) {
