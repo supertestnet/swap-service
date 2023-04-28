@@ -12,22 +12,6 @@ const tinysecp = require('tiny-secp256k1')
 const ECPair = ECPairFactory(tinysecp)
 const bolt11 = require('bolt11')
 const fs = require('fs')
-// import * as ws from "websocket";
-// var WebSocketClient = ws.default.client;
-// import * as bcipher from "browserify-cipher";
-// var browserifyCipher = bcipher.default;
-// import * as nobleSecp256k1 from "noble-secp256k1";
-// import * as cr from "crypto";
-// var crypto = cr.default;
-// import * as ax from "axios";
-// var axios = ax.default;
-// import * as bitcoinjs from "bitcoinjs-lib";
-// import * as rq from "request";
-// var request = rq.default;
-// import { ECPairFactory } from 'ecpair';
-// import * as tinysecp from 'tiny-secp256k1';
-// const ECPair = ECPairFactory(tinysecp);
-// import * as bolt11 from 'bolt11';
 
 //testnet only
 
@@ -36,8 +20,8 @@ var adminmac = "0201036C6E6402F801030A1043F7FF66DB876EE466CFD683452DE8C61201301A
 var lndendpoint = "http://localhost:7012";
 var min_amount = 546;
 var max_amount = 1000000;
-var fee_type = `percentage`;
-var fee = 5;
+var fee_type = `percentage`; //alternative: absolute
+var fee = 5; //if fee type is absolute, this integer is a flat rate, e.g. you will get 5 sats per swap; otherwise you get a rate corresponding to e.g. 5% of each swap
 
 //var privKey = "48af5b91b2eb1cab92c7243cf105adc39257fe986da28eb06c33faf3e8704ea7";
 var privKey = ECPair.makeRandom().privateKey.toString( "hex" );
@@ -1212,3 +1196,20 @@ async function getSignedEvent(event, privateKey) {
     event.sig = await nobleSecp256k1.schnorr.sign(event.id, privateKey);
     return event;
 }
+
+// import * as ws from "websocket";
+// var WebSocketClient = ws.default.client;
+// import * as bcipher from "browserify-cipher";
+// var browserifyCipher = bcipher.default;
+// import * as nobleSecp256k1 from "noble-secp256k1";
+// import * as cr from "crypto";
+// var crypto = cr.default;
+// import * as ax from "axios";
+// var axios = ax.default;
+// import * as bitcoinjs from "bitcoinjs-lib";
+// import * as rq from "request";
+// var request = rq.default;
+// import { ECPairFactory } from 'ecpair';
+// import * as tinysecp from 'tiny-secp256k1';
+// const ECPair = ECPairFactory(tinysecp);
+// import * as bolt11 from 'bolt11';
