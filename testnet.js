@@ -23,7 +23,6 @@ var max_amount = 1000000;
 var fee_type = `percentage`; //alternative: absolute
 var fee = 5; //if fee type is absolute, this integer is a flat rate, e.g. you will get 5 sats per swap; otherwise you get a rate corresponding to e.g. 5% of each swap
 
-//var privKey = "48af5b91b2eb1cab92c7243cf105adc39257fe986da28eb06c33faf3e8704ea7";
 var privKey = ECPair.makeRandom().privateKey.toString( "hex" );
 var pubKeyMinus2 = nobleSecp256k1.getPublicKey( privKey, true ).substring( 2 );
 console.log( "my privkey:", privKey );
