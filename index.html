@@ -177,6 +177,7 @@
       <p id="popupText">Popup Text</p>
     </div>
     <script>
+      if ( sessionStorage[ "seen_ids" ] ) var seen_ids = JSON.parse( sessionStorage[ "seen_ids" ] ); else var seen_ids = [];
       var $ = document.querySelector.bind(document);
       var $$ = document.querySelectorAll.bind(document);
       var { getSharedSecret, schnorr, utils } = nobleSecp256k1;
@@ -199,6 +200,10 @@
       async function handleMessage(message) {
         var [type, subId, event] = JSON.parse(message.data);
         var { kind, content } = event || {};
+        if ( !event || !event[ "id" ] ) return;
+        if ( seen_ids.includes( event.id ) ) return;
+        seen_ids.push( event.id );
+        sessionStorage[ "seen_ids" ] = JSON.stringify( seen_ids );
 
         if (kind === 10042) {
           console.log(event.pubkey);
@@ -251,8 +256,8 @@
           var fee_suffix = "%";
           if (content.fee_type == "absolute") fee_suffix = " sats";
           div.innerHTML = `<div class="offer">
-                <div>You send LN sats</div>
-                <div>You receive Base Layer sats</div>
+                <div>You send: sats on lightning</div>
+                <div>You receive: sats on the base layer</div>
                 <div>Minimum amount: <span class="min_amt"></span> sats</div>
                 <div>Maximum amount: <span class="max_amt"></span> sats</div>
                 <div>Fee: <span class="fee"></span></div>
@@ -331,6 +336,19 @@
                 return;
               }
               amount = Number(amount);
+              var original_amount = amount;
+              var feerate = await getMinFeeRate();
+              amount = amount + ( 200 * feerate );
+              var total = amount;
+              var mining_fee = total - original_amount;
+              if (parsedEvent.fee_type === "absolute") {
+                total = total + parsedEvent.fee;
+              } else {
+                total = amount * ((100 + parsedEvent.fee) / 100);
+              }
+              var service_fee = ( total - mining_fee ) - original_amount;
+              var conf = confirm( `The total amount you will pay is ${total.toFixed( 0 )} sats. The breakdown is:\n\n${original_amount} sats <-- what you will receive\n${mining_fee} sats <-- what miners will receive\n${service_fee} sats <-- what the swap provider will receive\n\nClick ok if that is alright with you or click cancel to stop this transaction` );
+              if ( !conf ) return;
               var preimage =
                 bitcoinjs.ECPair.makeRandom().privateKey.toString("hex");
               var hash = bitcoinjs.crypto
@@ -373,6 +391,7 @@
                 timelock,
                 destinationAddress,
                 htlcPub,
+                original_amount,
               ]);
               var message = {};
               message["offer_id"] = offer_id;
@@ -457,10 +476,12 @@
           }
           var original_quantity_of_sats = amount_expected;
           var feerate = await getMinFeeRate();
-          var new_quantity_of_sats = original_quantity_of_sats - 200 * feerate;
+          // var new_quantity_of_sats = original_quantity_of_sats - 200 * feerate;
+          var new_quantity_of_sats = htlcArray[8];
           var userPrivkey = htlcArray[4];
           var serverPubkey = htlcArray[1];
           var useraddress = htlcArray[6];
+          var original_amount = sessionStorage[ 8 ];
 
           var tx_hex = sweepingHTLC(
             txid,
@@ -480,7 +501,9 @@
           alert( `You're almost done! Just click ok when this transaction has 1 confirmation: https://mempool.space/testnet/tx/${txid}` );
           var sweep_txid = await pushBTCpmt(tx_hex);
           sessionStorage[ "successful_payment" ] = true;
+          sessionStorage.removeItem( "waiting_for_payment" );
           alert( `Your transaction was a success! Here is your txid: https://mempool.space/testnet/tx/${sweep_txid}` );
+          window.location.reload();
         }
       }
 
@@ -746,7 +769,7 @@
                 alert( `Looks like you didn't pay in time. Please try again.` );
                 sessionStorage[ "alert_sent" ] = true;
                 sessionStorage.removeItem( "waiting_for_payment" );
-                resolve( "failure" );
+                return "failure";
               }
             }, 200000 );
           }
@@ -754,6 +777,7 @@
           return new Promise(function (resolve, reject) {
             if (!address_received_money) {
               setTimeout(async function () {
+                if ( !sessionStorage[ "waiting_for_payment" ] ) resolve( "failure" );
                 var msg = await isAddressFundedYet(address);
                 resolve(msg);
               }, 5000);
