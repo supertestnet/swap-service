@@ -703,7 +703,7 @@
         var getFinalScripts = (txindex, input, script) => {
           // Step 1: Check to make sure the meaningful locking script matches what you expect.
           var decompiled = bitcoinjs.script.decompile(script);
-          if (!decompiled || decompiled[0] !== bitcoinjs.opcodes.OP_SHA256) {
+          if (!decompiled || decompiled[0] !== bitcoinjs.opcodes.OP_SIZE) {
             throw new Error(`Can not finalize input #${txindex}`);
           }
 
