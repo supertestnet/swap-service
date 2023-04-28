@@ -334,7 +334,7 @@
                 alert("Please enter a valid bitcoin address");
                 return;
               }
-              amount = Number(amount);
+              amount = Number(amount.toFixed( 0 ));
               var original_amount = amount;
               var feerate = await getMinFeeRate();
               amount = amount + ( 200 * feerate );
@@ -346,7 +346,7 @@
                 total = amount * ((100 + parsedEvent.fee) / 100);
               }
               var service_fee = ( total - mining_fee ) - original_amount;
-              var conf = confirm( `The total amount you will pay is ${total.toFixed( 0 )} sats. The breakdown is:\n\n${original_amount} sats <-- what you will receive\n${mining_fee} sats <-- what miners will receive\n${service_fee} sats <-- what the swap provider will receive\n\nClick ok if that is alright with you or click cancel to stop this transaction` );
+              var conf = confirm( `The total amount you will pay is ${total.toFixed( 0 )} sats. The breakdown is:\n\n${original_amount.toFixed( 0 )} sats <-- what you will receive\n${mining_fee.toFixed( 0 )} sats <-- what miners will receive\n${service_fee.toFixed( 0 )} sats <-- what the swap provider will receive\n\nClick ok if that is alright with you or click cancel to stop this transaction` );
               if ( !conf ) return;
               var preimage =
                 bitcoinjs.ECPair.makeRandom().privateKey.toString("hex");
@@ -409,7 +409,7 @@
                   amount + parsedEvent.fee;
               } else {
                 sessionStorage.expected_invoice_amount =
-                  amount * ((100 + parsedEvent.fee) / 100);
+                  Number((amount * ((100 + parsedEvent.fee) / 100)).toFixed(0));
               }
               var acceptEvent = {
                 content: encrypted_message,
@@ -445,7 +445,7 @@
             getInvoiceAmount(content) !==
             Number(sessionStorage.expected_invoice_amount)
           ) {
-            alert("Seller tried to scam you, aborting trade!");
+            alert( "Seller tried to scam you, aborting trade! Expected amount: " + sessionStorage.expected_invoice_amount + " Actual amount: " + getInvoiceAmount(content) );
             return;
           }
 
