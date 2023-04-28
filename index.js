@@ -34,6 +34,10 @@ const fs = require('fs')
 var invoicemac = "0201036C6E640258030A1041F7FF66DB876EE466CFD683452DE8C61201301A160A0761646472657373120472656164120577726974651A170A08696E766F69636573120472656164120577726974651A0F0A076F6E636861696E12047265616400000620664FB824326207C2EBFE90C1716C7AE6FA074407E0960B24B482B20C2599BC6A";
 var adminmac = "0201036C6E6402F801030A1043F7FF66DB876EE466CFD683452DE8C61201301A160A0761646472657373120472656164120577726974651A130A04696E666F120472656164120577726974651A170A08696E766F69636573120472656164120577726974651A210A086D616361726F6F6E120867656E6572617465120472656164120577726974651A160A076D657373616765120472656164120577726974651A170A086F6666636861696E120472656164120577726974651A160A076F6E636861696E120472656164120577726974651A140A057065657273120472656164120577726974651A180A067369676E6572120867656E65726174651204726561640000062022840D6628EA0BFA93CB46BF26F60EB8FBB1497DBBAEBD55E269C6303DA063F4";
 var lndendpoint = "http://localhost:7012";
+var min_amount = 546;
+var max_amount = 1000000;
+var fee_type = `percentage`;
+var fee = 5;
 
 //var privKey = "48af5b91b2eb1cab92c7243cf105adc39257fe986da28eb06c33faf3e8704ea7";
 var privKey = ECPair.makeRandom().privateKey.toString( "hex" );
@@ -45,10 +49,6 @@ var relay = "wss://relay1.nostrchat.io";
 // var relay = "ws://192.168.1.4:6969";
 relay = normalizeRelayURL( relay );
 var deal_in_progress = false;
-var min_amount = 546;
-var max_amount = 1000000;
-var fee_type = `percentage`;
-var fee = 5;
 
 class ls {
   constructor(content) {
@@ -484,24 +484,6 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
     if ( state_of_held_invoice_with_that_hash != "ACCEPTED" ) {
         deal_in_progress = false;
         socket.connect( relay );
-        // async function sendOffer() {
-        //     var keypair = ECPair.makeRandom();
-        //     localStorage.setContent( "privkey", keypair.privateKey.toString( 'hex' ) );
-        //     var offer = {
-        //         offer_id: ECPair.makeRandom().privateKey.toString('hex'),
-        //         pubkey: keypair.publicKey.toString( "hex" ),
-        //         you_send: `lightning sats`,
-        //         i_send: `base layer sats`,
-        //         min_amount: min_amount,
-        //         max_amount: max_amount,
-        //         fee_type: fee_type,
-        //         fee: fee,
-        //     };
-        //     var event_id = await setPublicNote( JSON.stringify(offer), relay );
-        //     console.log( "event id:", event_id, "btckey:", keypair.publicKey.toString( "hex" ) );
-        //     setTimeout( function() {sendOffer();}, 1000 * 60 * 10 );
-        // }
-        // sendOffer();
         return "nice try, asking me to pay an invoice without compensation: " + state_of_held_invoice_with_that_hash;
     }
     var amount_i_will_receive = await getInvoiceAmount( users_pmthash );
@@ -594,6 +576,7 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
         console.log( "preimage that pays me:", preimage_for_settling_invoice_that_pays_me );
         settleHoldInvoice( preimage_for_settling_invoice_that_pays_me );
         var returnable = '{"status": "success","preimage":"' + preimage_for_settling_invoice_that_pays_me + '"}';
+        socket.connect( relay );
     } else {
         var returnable = '{"status": "failure"}';
     }
@@ -1099,7 +1082,7 @@ async function openConnection( connection ) {
               pubkey: pubKeyMinus2,
           };
           var signedOffer = await getSignedEvent(offerEvent, privKey);
-          console.log( "signed offer:", signedOffer );
+          console.log( "signed offer:", JSON.stringify( signedOffer ) );
           connection.sendUTF( JSON.stringify( [ "EVENT", signedOffer ] ) );
 
           if ( fee_type === 'absolute' ) {
@@ -1145,9 +1128,10 @@ async function openConnection( connection ) {
         };
 
         var signedOffer = await getSignedEvent(offerEvent, privKey);
-        console.log( "signed offer:", signedOffer );
+        console.log( "about to send this offer:", JSON.stringify( signedOffer ) );
         connection.sendUTF( JSON.stringify( [ "EVENT", signedOffer ] ) );
-        if ( !deal_in_progress ) setTimeout( function() {sendOffer();}, 1000 * 60 * 10 );
+        console.log( "sent!" );
+        if ( !deal_in_progress ) setTimeout( function() {socket.connect( relay );}, 1000 * 60 * 10 );
     }
     sendOffer();
 }
