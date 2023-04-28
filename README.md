@@ -51,7 +51,7 @@ var fee_type = "percentage"; //alternative: "absolute"
 var fee = 5; //if fee type is absolute, this integer is a flat rate, e.g. you will get 5 sats per swap; otherwise you get a rate corresponding to e.g. 5% of each swap
 ```
 
-You can get your admin macaroon and invoice macaroon from tools like Thunderhub or Voltage Cloud. Paste them in between the quotation marks where it says `invoicemac = ""` and `adminmac = ""`
+You can get your admin macaroon and invoice macaroon from tools like Thunderhub or Voltage Cloud. Paste them in between the quotation marks where it says `invoicemac = ""` and `adminmac = ""`. In nano, you can usually paste with one of these two commands: `right-click+paste` or `shift + insert`.
 
 Save your file: `hit ctrl+o (that's an o as in output not a 0) and then, after about half a second, hit the enter key`
 
