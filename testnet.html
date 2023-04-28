@@ -541,6 +541,9 @@
           `
               	OP_SHA256
               	${pmthash}
+                OP_SIZE
+                ${bitcoinjs.script.number.encode(32).toString('hex')}
+                OP_EQUALVERIFY
               	OP_EQUAL
               	OP_IF
                 	${userPubkey}
