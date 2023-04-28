@@ -108,7 +108,7 @@
           return (
             typeof bitcoinjs.address.toOutputScript(
               address,
-              bitcoinjs.networks.testnet
+              bitcoinjs.networks.mainnet
             ) == "object"
           );
         } catch (e) {
@@ -204,7 +204,7 @@
         if ( seen_ids.includes( event.id ) ) return;
         seen_ids.push( event.id );
 
-        if (kind === 10042) {
+        if (kind === 10043) {
           console.log(event.pubkey);
           if ($(`div[data-pubkey="${event.pubkey}"]`)) {
             $(`div[data-pubkey="${event.pubkey}"]`).remove();
@@ -377,9 +377,9 @@
               var htlcObject = bitcoinjs.payments.p2wsh({
                 redeem: {
                   output: witness_script,
-                  network: bitcoinjs.networks.testnet,
+                  network: bitcoinjs.networks.mainnet,
                 },
-                network: bitcoinjs.networks.testnet,
+                network: bitcoinjs.networks.mainnet,
               });
               sessionStorage.htlcInfo = JSON.stringify([
                 htlcObject.address,
@@ -496,11 +496,11 @@
           console.log(tx_hex);
           $( '.black-bg' ).style.display = "none";
           $( '.modal' ).style.display = "none";
-          alert( `You're almost done! Just click ok when this transaction has 1 confirmation: https://mempool.space/testnet/tx/${txid}` );
+          alert( `You're almost done! Just click ok when this transaction has 1 confirmation: https://mempool.space/tx/${txid}` );
           var sweep_txid = await pushBTCpmt(tx_hex);
           sessionStorage[ "successful_payment" ] = true;
           sessionStorage.removeItem( "waiting_for_payment" );
-          alert( `Your transaction was a success! Here is your txid: https://mempool.space/testnet/tx/${sweep_txid}` );
+          alert( `Your transaction was a success! Here is your txid: https://mempool.space/tx/${sweep_txid}` );
           window.location.reload();
         }
       }
@@ -510,7 +510,7 @@
       var timestamp = Math.floor(Date.now() / 1000);
       var timeMinusTen = timestamp - 600;
       var subId = bitcoinjs.ECPair.makeRandom().privateKey.toString("hex");
-      var filter = { kinds: [10042], since: timeMinusTen };
+      var filter = { kinds: [10043], since: timeMinusTen };
       var filter2 = { kinds: [4], "#p": [pubKey], since: timestamp - 5 };
 
       async function openConnection() {
@@ -559,7 +559,7 @@
       }
       async function getBlockheight() {
         var data = await getData(
-          "https://mempool.space/testnet/api/blocks/tip/height"
+          "https://mempool.space/api/blocks/tip/height"
         );
         return Number(data);
       }
@@ -670,7 +670,7 @@
         var outputscript =
           "00" + bitcoinjs.crypto.sha256(witnessscript).toString("hex");
         //  var useraddress = "tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt";
-        var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
+        var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.mainnet });
         //  psbt.setLocktime( timelock );
         psbt.addInput({
           hash: txid,
@@ -750,7 +750,7 @@
           };
           xhttp.open(
             "GET",
-            "https://mempool.space/testnet/api/address/" + address,
+            "https://mempool.space/api/address/" + address,
             true
           );
           xhttp.send();
@@ -796,7 +796,7 @@
         let txid;
         let vout;
         let amt;
-        let nonjson = await getData("https://mempool.space/testnet/api/address/" + address + "/txs");
+        let nonjson = await getData("https://mempool.space/api/address/" + address + "/txs");
         let json = JSON.parse(nonjson);
         json.forEach(function (tx) {
           tx["vout"].forEach(function (output, index) {
@@ -812,12 +812,12 @@
 
       function getCompressedPubkeyHexFromPrivkeyHex(privkeyhex) {
         return bitcoinjs.ECPair.fromPrivateKey(Buffer.from(privkeyhex, "hex"), {
-          network: bitcoinjs.networks.testnet,
+          network: bitcoinjs.networks.mainnet,
         }).publicKey.toString("hex");
       }
       async function getMinFeeRate() {
         var fees = await getData(
-          "https://mempool.space/testnet/api/v1/fees/recommended"
+          "https://mempool.space/api/v1/fees/recommended"
         );
         fees = JSON.parse( fees );
         if (!("minimumFee" in fees)) return "error -- site down";
@@ -856,7 +856,7 @@
 
       async function pushBTCpmt(rawtx) {
         var txid = await postData(
-          "https://mempool.space/testnet/api/tx",
+          "https://mempool.space/api/tx",
           rawtx
         );
         return txid;
