@@ -160,7 +160,7 @@ function recoverSats( senderPrivkey, inputtxid, inputindex, fromamount, toaddres
                 output: script,
                 input: bitcoinjs.script.compile([
                     input.partialSig[0].signature,
-                    Buffer.from( "", "hex" ),
+                    Buffer.from( ECPair.makeRandom().privateKey.toString( "hex" ), "hex" ),
                  ]),
             }
         });
