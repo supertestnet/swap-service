@@ -1,3 +1,23 @@
+/*
+
+THESE NEXT LINES ARE CUSTOMIZABLE SETTINGS
+
+*/
+
+var invoicemac = "";
+var adminmac = "";
+var lndendpoint = "";
+var min_amount = 546;
+var max_amount = 1000000;
+var fee_type = "percentage"; //alternative: "absolute"
+var fee = 5; //if fee type is absolute, this integer is a flat rate, e.g. you will get 5 sats per swap; otherwise you get a rate corresponding to e.g. 5% of each swap
+
+/*
+
+END OF CUSTOMIZABLE SETTINGS - DON'T TOUCH ANYTHING AFTER THIS POINT
+
+*/
+
 const ws = require('websocket')
 const WebSocketClient = ws.client;
 const browserifyCipher = require('browserify-cipher')
@@ -12,14 +32,6 @@ const tinysecp = require('tiny-secp256k1')
 const ECPair = ECPairFactory(tinysecp)
 const bolt11 = require('bolt11')
 const fs = require('fs')
-
-var invoicemac = "";
-var adminmac = "";
-var lndendpoint = "";
-var min_amount = 546;
-var max_amount = 1000000;
-var fee_type = `percentage`; //alternative: absolute
-var fee = 5; //if fee type is absolute, this integer is a flat rate, e.g. you will get 5 sats per swap; otherwise you get a rate corresponding to e.g. 5% of each swap
 
 var privKey = ECPair.makeRandom().privateKey.toString( "hex" );
 var pubKeyMinus2 = nobleSecp256k1.getPublicKey( privKey, true ).substring( 2 );
