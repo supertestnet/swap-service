@@ -1,3 +1,23 @@
+/*
+
+THESE NEXT LINES ARE CUSTOMIZABLE SETTINGS
+
+*/
+
+var invoicemac = "";
+var adminmac = "";
+var lndendpoint = "";
+var min_amount = 546;
+var max_amount = 1000000;
+var fee_type = "percentage"; //alternative: "absolute"
+var fee = 5; //if fee type is absolute, this integer is a flat rate, e.g. you will get 5 sats per swap; otherwise you get a rate corresponding to e.g. 5% of each swap
+
+/*
+
+END OF CUSTOMIZABLE SETTINGS - DON'T TOUCH ANYTHING AFTER THIS POINT
+
+*/
+
 const ws = require('websocket')
 const WebSocketClient = ws.client;
 const browserifyCipher = require('browserify-cipher')
@@ -12,16 +32,6 @@ const tinysecp = require('tiny-secp256k1')
 const ECPair = ECPairFactory(tinysecp)
 const bolt11 = require('bolt11')
 const fs = require('fs')
-
-//testnet only
-
-var invoicemac = "0201036C6E640258030A1041F7FF66DB876EE466CFD683452DE8C61201301A160A0761646472657373120472656164120577726974651A170A08696E766F69636573120472656164120577726974651A0F0A076F6E636861696E12047265616400000620664FB824326207C2EBFE90C1716C7AE6FA074407E0960B24B482B20C2599BC6A";
-var adminmac = "0201036C6E6402F801030A1043F7FF66DB876EE466CFD683452DE8C61201301A160A0761646472657373120472656164120577726974651A130A04696E666F120472656164120577726974651A170A08696E766F69636573120472656164120577726974651A210A086D616361726F6F6E120867656E6572617465120472656164120577726974651A160A076D657373616765120472656164120577726974651A170A086F6666636861696E120472656164120577726974651A160A076F6E636861696E120472656164120577726974651A140A057065657273120472656164120577726974651A180A067369676E6572120867656E65726174651204726561640000062022840D6628EA0BFA93CB46BF26F60EB8FBB1497DBBAEBD55E269C6303DA063F4";
-var lndendpoint = "http://localhost:7012";
-var min_amount = 546;
-var max_amount = 1000000;
-var fee_type = `percentage`; //alternative: absolute
-var fee = 5; //if fee type is absolute, this integer is a flat rate, e.g. you will get 5 sats per swap; otherwise you get a rate corresponding to e.g. 5% of each swap
 
 var privKey = ECPair.makeRandom().privateKey.toString( "hex" );
 var pubKeyMinus2 = nobleSecp256k1.getPublicKey( privKey, true ).substring( 2 );
