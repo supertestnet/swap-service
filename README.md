@@ -37,7 +37,7 @@ Then enter the directory and turn it into a nodejs app: `cd swap-service && npm 
 
 Install the dependencies: `npm i websocket browserify-cipher noble-secp256k1 axios bitcoinjs-lib request ecpair tiny-secp256k1 bolt11`
 
-Open the index.js file in a text editor: `nano index.js`
+Open the index.js file (or the testnet.js file) in a text editor: `nano index.js` (or `nano testnet.js`)
 
 Modify the first few lines:
 
@@ -55,7 +55,7 @@ You can get your admin macaroon and invoice macaroon from tools like Thunderhub 
 
 Save your file: `hit ctrl+o (that's an o as in output not a 0) and then, after about half a second, hit the enter key`
 
-Run the app: `node index.js`
+Run the app: `node index.js` (or `nano testnet.js`)
 
 And you're done! Your node should automatically perform submarine swaps with anyone who accepts your offer and you will earn fees for it.
 
