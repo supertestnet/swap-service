@@ -177,7 +177,7 @@
       <p id="popupText">Popup Text</p>
     </div>
     <script>
-      if ( sessionStorage[ "seen_ids" ] ) var seen_ids = JSON.parse( sessionStorage[ "seen_ids" ] ); else var seen_ids = [];
+      var seen_ids = [];
       var $ = document.querySelector.bind(document);
       var $$ = document.querySelectorAll.bind(document);
       var { getSharedSecret, schnorr, utils } = nobleSecp256k1;
@@ -203,7 +203,6 @@
         if ( !event || !event[ "id" ] ) return;
         if ( seen_ids.includes( event.id ) ) return;
         seen_ids.push( event.id );
-        sessionStorage[ "seen_ids" ] = JSON.stringify( seen_ids );
 
         if (kind === 10042) {
           console.log(event.pubkey);
@@ -481,7 +480,6 @@
           var userPrivkey = htlcArray[4];
           var serverPubkey = htlcArray[1];
           var useraddress = htlcArray[6];
-          var original_amount = sessionStorage[ 8 ];
 
           var tx_hex = sweepingHTLC(
             txid,
