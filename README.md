@@ -64,3 +64,8 @@ Run the app: `node index.js` (or `node testnet.js`)
 And you're done! Your node should automatically perform submarine swaps with anyone who accepts your offer and you will earn fees for it.
 
 > Pro tip: ensure you set your minimum amount and your fee to a profitable value. If your minimum is only 546 sats (bitcoin's dust limit) then you will sometimes spend more in mining fees then you'll gain from service fees. That is because the cost of a mining fee to send someone sats on the base layer is typically about 200 sats times whatever the current feerate is (e.g. 3 sats per byte, 10 sats per byte, or 25 sats per byte). So your fee expense might be up to 200\*25 = 5000 sats, even though you're only sending someone 546 sats. If your fee revenue is only 5 percent of 546 sats (546\*.05=27 sats) but your expense is 5000 sats, you will lose money. So be sure to set reasonably large values for min_amount and fee, but not so high that no one wants to use your service because it's too expensive.
+
+# Credits
+
+- A lot of credit goes to https://twitter.com/FPupusas for helping me  build this
+- Thanks also to [Boltz Exchange](https://boltz.exchange/) for immediately finding a critical zero day vulnerability when I released this -- I was able to fix it in only a few minutes due to their diligent bug reporting
