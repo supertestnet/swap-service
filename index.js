@@ -3,7 +3,7 @@ const WebSocketClient = ws.client;
 const browserifyCipher = require('browserify-cipher')
 const nobleSecp256k1 = require('noble-secp256k1')
 const crypto = require('crypto')
-const socket = new WebSocketClient();
+var socket = new WebSocketClient();
 const axios = require('axios')
 const bitcoinjs = require('bitcoinjs-lib')
 const request = require('request')
@@ -285,6 +285,7 @@ async function getHodlInvoice( amount, hash, expiry = 40 ) {
   }
   request.post(options, function(error, response, body) {
     invoice = body[ "payment_request" ];
+    console.log( "hodl invoice:", body );
   });
   async function isNoteSetYet( note_i_seek ) {
           return new Promise( function( resolve, reject ) {
@@ -483,6 +484,11 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
     var state_of_held_invoice_with_that_hash = await checkInvoiceStatus( users_pmthash );
     if ( state_of_held_invoice_with_that_hash != "ACCEPTED" ) {
         deal_in_progress = false;
+        socket = {}
+        console.log( "socket:", socket );
+        socket = new WebSocketClient();
+        console.log( "socket:", socket );
+        socket.on( 'connect', openConnection );
         socket.connect( relay );
         return "nice try, asking me to pay an invoice without compensation: " + state_of_held_invoice_with_that_hash;
     }
@@ -576,10 +582,18 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
         console.log( "preimage that pays me:", preimage_for_settling_invoice_that_pays_me );
         settleHoldInvoice( preimage_for_settling_invoice_that_pays_me );
         var returnable = '{"status": "success","preimage":"' + preimage_for_settling_invoice_that_pays_me + '"}';
+        socket = {}
+        console.log( "socket:", socket );
+        socket = new WebSocketClient();
+        console.log( "socket:", socket );
+        socket.on( 'connect', openConnection );
         socket.connect( relay );
     } else {
         var returnable = '{"status": "failure"}';
     }
+    console.log( "deal is in progress, right?", deal_in_progress );
+    deal_in_progress = false;
+    console.log( "what about now? It is in progress, right? (I actually don't want it to be)", deal_in_progress );
     return returnable;
 }
 
@@ -1026,6 +1040,8 @@ async function openConnection( connection ) {
           if (typeof jsonHash !== 'string') return;
           if (jsonHash.length !== 64) return;
           if (!isHex(jsonHash)) return;
+          var status = await checkInvoiceStatusWithoutLoop( jsonHash );
+          if ( status ) return;
 
           if (!jsonAddress) return;
           if (typeof jsonAddress !== 'string') return;
@@ -1097,6 +1113,16 @@ async function openConnection( connection ) {
           console.log( "info I will pass to the get invoice function:", post_fee_amount, jsonHash, 40 );
           var swap_invoice = await getHodlInvoice( post_fee_amount, jsonHash, 40 );
           console.log( "swap_invoice:", swap_invoice );
+          if ( !swap_invoice ) {
+            deal_in_progress = false;
+            socket = {}
+            console.log( "socket:", socket );
+            socket = new WebSocketClient();
+            console.log( "socket:", socket );
+            socket.on( 'connect', openConnection );
+            socket.connect( relay );
+            return;
+          }
           var note = setNote( swap_invoice, event.pubkey, relay );
           var message = await payHTLCAndSettleWithPreimage( swap_invoice, p2wsh.address, jsonAmount );
           console.log( message );
@@ -1136,7 +1162,14 @@ async function openConnection( connection ) {
         console.log( "about to send this offer:", JSON.stringify( signedOffer ) );
         connection.sendUTF( JSON.stringify( [ "EVENT", signedOffer ] ) );
         console.log( "sent!" );
-        if ( !deal_in_progress ) setTimeout( function() {socket.connect( relay );}, 1000 * 60 * 10 );
+        if ( !deal_in_progress ) setTimeout( function() {
+            socket = {}
+            console.log( "socket:", socket );
+            socket = new WebSocketClient();
+            console.log( "socket:", socket );
+            socket.on( 'connect', openConnection );
+            socket.connect( relay );
+        }, 1000 * 60 * 10 );
     }
     sendOffer();
 }
