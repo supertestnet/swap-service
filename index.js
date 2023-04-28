@@ -12,24 +12,6 @@ const tinysecp = require('tiny-secp256k1')
 const ECPair = ECPairFactory(tinysecp)
 const bolt11 = require('bolt11')
 const fs = require('fs')
-// import * as ws from "websocket";
-// var WebSocketClient = ws.default.client;
-// import * as bcipher from "browserify-cipher";
-// var browserifyCipher = bcipher.default;
-// import * as nobleSecp256k1 from "noble-secp256k1";
-// import * as cr from "crypto";
-// var crypto = cr.default;
-// import * as ax from "axios";
-// var axios = ax.default;
-// import * as bitcoinjs from "bitcoinjs-lib";
-// import * as rq from "request";
-// var request = rq.default;
-// import { ECPairFactory } from 'ecpair';
-// import * as tinysecp from 'tiny-secp256k1';
-// const ECPair = ECPairFactory(tinysecp);
-// import * as bolt11 from 'bolt11';
-
-//testnet only
 
 var invoicemac = "0201036C6E640258030A1041F7FF66DB876EE466CFD683452DE8C61201301A160A0761646472657373120472656164120577726974651A170A08696E766F69636573120472656164120577726974651A0F0A076F6E636861696E12047265616400000620664FB824326207C2EBFE90C1716C7AE6FA074407E0960B24B482B20C2599BC6A";
 var adminmac = "0201036C6E6402F801030A1043F7FF66DB876EE466CFD683452DE8C61201301A160A0761646472657373120472656164120577726974651A130A04696E666F120472656164120577726974651A170A08696E766F69636573120472656164120577726974651A210A086D616361726F6F6E120867656E6572617465120472656164120577726974651A160A076D657373616765120472656164120577726974651A170A086F6666636861696E120472656164120577726974651A160A076F6E636861696E120472656164120577726974651A140A057065657273120472656164120577726974651A180A067369676E6572120867656E65726174651204726561640000062022840D6628EA0BFA93CB46BF26F60EB8FBB1497DBBAEBD55E269C6303DA063F4";
@@ -103,14 +85,14 @@ function postData( url, json, headers ) {
 }
 
 async function getMinFeeRate() {
-	var fees = await getData( "https://mempool.space/testnet/api/v1/fees/recommended" );
+	var fees = await getData( "https://mempool.space/api/v1/fees/recommended" );
 	if ( !( "minimumFee" in fees ) ) return "error -- site down";
 	var minfee = fees[ "minimumFee" ];
 	return minfee;
 }
 
 async function getBlockheight() {
-    var data = await getData( "https://mempool.space/testnet/api/blocks/tip/height" );
+    var data = await getData( "https://mempool.space/api/blocks/tip/height" );
     return Number( data );
 }
 
@@ -136,8 +118,8 @@ function generateHtlc(serverPubkey, userPubkey, pmthash, timelock) {
 }
 
 function recoverSats( senderPrivkey, inputtxid, inputindex, fromamount, toaddress, toamount, sequence_number ) {
-    var keyPairSender = bitcoinjs.ECPair.fromPrivateKey( Buffer.from( senderPrivkey, 'hex' ), bitcoinjs.networks.testnet );
-    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet })
+    var keyPairSender = bitcoinjs.ECPair.fromPrivateKey( Buffer.from( senderPrivkey, 'hex' ), bitcoinjs.networks.mainnet );
+    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.mainnet })
     .addInput({
         hash: inputtxid,
         index: inputindex,
@@ -179,7 +161,7 @@ function recoverSats( senderPrivkey, inputtxid, inputindex, fromamount, toaddres
 
 function getSwapAddress( serverPubkey, userPubkey, pmthash, timelock ) {
     var witnessscript = generateHtlc( serverPubkey, userPubkey, pmthash, timelock );
-    var p2wsh = bitcoinjs.payments.p2wsh({redeem: {output: witnessscript, network: bitcoinjs.networks.testnet}, network: bitcoinjs.networks.testnet });
+    var p2wsh = bitcoinjs.payments.p2wsh({redeem: {output: witnessscript, network: bitcoinjs.networks.mainnet}, network: bitcoinjs.networks.mainnet });
     return p2wsh.address;
 }
 
@@ -354,7 +336,7 @@ async function settleHoldInvoice( preimage ) {
 async function howManyConfs( txid ) {
     var blockheight = await getBlockheight();
     return new Promise( async function( resolve, reject ) {
-        var json = await getData( `https://mempool.space/testnet/api/tx/` + txid );
+        var json = await getData( `https://mempool.space/api/tx/` + txid );
         if ( json[ "status" ][ "confirmed" ] ) {
             resolve( ( Number( blockheight ) - Number( json[ "status" ][ "block_height" ] ) ) + 1 );
         } else {
@@ -406,7 +388,7 @@ async function getAddress() {
 }
 
 async function addressOnceSentMoney( address ) {
-    var json = await getData( "https://mempool.space/testnet/api/address/" + address );
+    var json = await getData( "https://mempool.space/api/address/" + address );
     if ( json[ "chain_stats" ][ "spent_txo_count" ] > 0 || json[ "mempool_stats" ][ "spent_txo_count" ] > 0 ) {
         return true;
     }
@@ -460,7 +442,7 @@ async function loopTilAddressSendsMoney( address, recovery_info ) {
 
 async function addressSentMoneyInThisTx( address, txid_of_deposit ) {
     var txid;
-    var json = await getData( "https://mempool.space/testnet/api/address/" + address + "/txs" );
+    var json = await getData( "https://mempool.space/api/address/" + address + "/txs" );
     json.forEach( function( tx ) {
         tx[ "vin" ].forEach( function( input ) {
             if ( input[ "txid" ] == txid_of_deposit ) {
@@ -564,7 +546,7 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
     //from lnd to loopTilAddressSendsMoney. Then, when that function loops, it should check how many confs
     //the deposit tx has, and, if it has more than 40, sweep the money to the address obtained from lnd
     await waitSomeSeconds( 30 );
-    var vout = await getVout( txid_of_deposit, htlc_address, Number( amount ), "testnet/" );
+    var vout = await getVout( txid_of_deposit, htlc_address, Number( amount ), "" );
     console.log( "vout:", vout );
     var recovery_address = await getAddress();
     var recovery_info = [localStorage.content[ "privkey" ], txid_of_deposit, vout, Number( amount ), 40, recovery_address];
@@ -909,7 +891,7 @@ async function setPublicNote( note, relay ) {
                 0,
                 pubKeyMinus2,
                 now,
-                10042,
+                10043,
                 [],
                 note
             ];
@@ -929,7 +911,7 @@ async function setPublicNote( note, relay ) {
                                     "id": msghash,
                                     "pubkey": pubKeyMinus2,
                                     "created_at": now,
-                                    "kind": 10042,
+                                    "kind": 10043,
                                     "tags": [],
                                     "content": note,
                                     "sig": sig
@@ -970,14 +952,14 @@ async function setPublicNote( note, relay ) {
 
 function isValidAddress( address ) {
     try{
-        return ( typeof( bitcoinjs.address.toOutputScript( address, bitcoinjs.networks.testnet ) ) == "object" );
+        return ( typeof( bitcoinjs.address.toOutputScript( address, bitcoinjs.networks.mainnet ) ) == "object" );
     } catch( e ) {
         return;
     }
 }
 
 async function getPreimageFromTransactionThatSpendsAnHTLC( txid, pmthash ) {
-    var json = await getData( "https://mempool.space/testnet/api/tx/" + txid );
+    var json = await getData( "https://mempool.space/api/tx/" + txid );
     var i; for ( i=0; i<json[ "vin" ].length; i++ ) {
         var j; for ( j=0; j<json[ "vin" ][ i ][ "witness" ].length; j++ ) {
             if ( bitcoinjs.crypto.sha256( Buffer.from( json[ "vin" ][ i ][ "witness" ][ j ], "hex" ) ).toString( "hex" ) == pmthash ) {
@@ -1002,7 +984,7 @@ async function openConnection( connection ) {
         var { kind, content } = event || {};
         if (!event) return;
         console.log( "event:", event );
-        if (kind === 10042) {
+        if (kind === 10043) {
           if (!content) return;
           var offerContent = JSON.parse(content);
           offers = {};
@@ -1081,7 +1063,7 @@ async function openConnection( connection ) {
             timelock
           );
           var p2wsh = bitcoinjs.payments.p2wsh({
-            redeem: { output: witness_script, network: bitcoinjs.networks.testnet },
+            redeem: { output: witness_script, network: bitcoinjs.networks.mainnet },
           });
           console.log('swap address:', p2wsh.address);
           if ( jsonAddress !=  p2wsh.address ) {
@@ -1096,7 +1078,7 @@ async function openConnection( connection ) {
           var offerEvent = {
               content: "",
               created_at: Math.floor(Date.now() / 1000),
-              kind: 10042,
+              kind: 10043,
               tags: [],
               pubkey: pubKeyMinus2,
           };
@@ -1133,7 +1115,7 @@ async function openConnection( connection ) {
     var timeMinusTen = timestamp - 600;
     var subId = ECPair.makeRandom().privateKey.toString( "hex" );
     var filter = { kinds: [4], "#p": [pubKeyMinus2], since: timeMinusTen };
-    var filter2 = { kinds: [10042], authors: [pubKeyMinus2], since: timeMinusTen };
+    var filter2 = { kinds: [10043], authors: [pubKeyMinus2], since: timeMinusTen };
     var subscription = [ "REQ", subId, filter, filter2 ];
     subscription = JSON.stringify( subscription );
     setTimeout( function() {connection.sendUTF( subscription );}, 1000 );
@@ -1153,7 +1135,7 @@ async function openConnection( connection ) {
         var offerEvent = {
             content: JSON.stringify(offer),
             created_at: Math.floor(Date.now() / 1000),
-            kind: 10042,
+            kind: 10043,
             tags: [],
             pubkey: pubKeyMinus2,
         };
