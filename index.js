@@ -1020,6 +1020,7 @@ async function openConnection( connection ) {
 
           if (!jsonAmount) return;
           if (typeof jsonAmount !== 'number') return;
+          if (String(jsonAmount).includes( "." )) return;
 
           if (!jsonHash) return;
           if (typeof jsonHash !== 'string') return;
@@ -1072,7 +1073,9 @@ async function openConnection( connection ) {
             return;
           }
           // console.log(`acceptance`);
+          console.log( "a deal is already in progress, right?", deal_in_progress );
           deal_in_progress = true;
+          console.log( "but noow there is, right?", deal_in_progress );
           //replace offer with a blank one so that people don't accept it twice
           var offerEvent = {
               content: "",
@@ -1090,6 +1093,8 @@ async function openConnection( connection ) {
           } else {
             var post_fee_amount = jsonAmount * ( ( 100 + fee ) / 100 );
           }
+          post_fee_amount = Number( post_fee_amount.toFixed( 0 ) );
+          console.log( "info I will pass to the get invoice function:", post_fee_amount, jsonHash, 40 );
           var swap_invoice = await getHodlInvoice( post_fee_amount, jsonHash, 40 );
           console.log( "swap_invoice:", swap_invoice );
           var note = setNote( swap_invoice, event.pubkey, relay );
