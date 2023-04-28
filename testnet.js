@@ -4,9 +4,9 @@ THESE NEXT LINES ARE CUSTOMIZABLE SETTINGS
 
 */
 
-var invoicemac = "0201036C6E640258030A1041F7FF66DB876EE466CFD683452DE8C61201301A160A0761646472657373120472656164120577726974651A170A08696E766F69636573120472656164120577726974651A0F0A076F6E636861696E12047265616400000620664FB824326207C2EBFE90C1716C7AE6FA074407E0960B24B482B20C2599BC6A";
-var adminmac = "0201036C6E6402F801030A1043F7FF66DB876EE466CFD683452DE8C61201301A160A0761646472657373120472656164120577726974651A130A04696E666F120472656164120577726974651A170A08696E766F69636573120472656164120577726974651A210A086D616361726F6F6E120867656E6572617465120472656164120577726974651A160A076D657373616765120472656164120577726974651A170A086F6666636861696E120472656164120577726974651A160A076F6E636861696E120472656164120577726974651A140A057065657273120472656164120577726974651A180A067369676E6572120867656E65726174651204726561640000062022840D6628EA0BFA93CB46BF26F60EB8FBB1497DBBAEBD55E269C6303DA063F4";
-var lndendpoint = "https://localhost:8080"; //e.g. https://127.0.0.1:8080 or https://cloud-59.voltage.com
+var invoicemac = "";
+var adminmac = "";
+var lndendpoint = ""; //e.g. https://127.0.0.1:8080 or https://cloud-59.voltage.com
 var min_amount = 546;
 var max_amount = 1000000;
 var fee_type = "percentage"; //alternative: "absolute"
@@ -112,6 +112,9 @@ function generateHtlc(serverPubkey, userPubkey, pmthash, timelock) {
         `
         OP_SHA256
         ${pmthash}
+        OP_SIZE
+        ${bitcoinjs.script.number.encode(32).toString('hex')}
+        OP_EQUALVERIFY
         OP_EQUAL
         OP_IF
         ${userPubkey}
@@ -157,7 +160,7 @@ function recoverSats( senderPrivkey, inputtxid, inputindex, fromamount, toaddres
                 output: script,
                 input: bitcoinjs.script.compile([
                     input.partialSig[0].signature,
-                    Buffer.from( "", "hex" ),
+                    Buffer.from( ECPair.makeRandom().privateKey.toString( "hex" ), "hex" ),
                  ]),
             }
         });
