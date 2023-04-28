@@ -110,6 +110,9 @@ async function getBlockheight() {
 function generateHtlc(serverPubkey, userPubkey, pmthash, timelock) {
    return bitcoinjs.script.fromASM(
         `
+	OP_SIZE
+	${bitcoinjs.script.number.encode(32).toString('hex')}
+	OP_EQUALVERIFY
         OP_SHA256
         ${pmthash}
         OP_EQUAL
