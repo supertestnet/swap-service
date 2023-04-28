@@ -485,6 +485,10 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
         socket = new WebSocketClient();
         console.log( "socket:", socket );
         socket.on( 'connect', openConnection );
+	socket.on( 'close', () => {
+	    console.log( "connection closed! reconnecting..." );
+	    socket.connect( relay );
+	});
         socket.connect( relay );
         return "nice try, asking me to pay an invoice without compensation: " + state_of_held_invoice_with_that_hash;
     }
@@ -583,6 +587,10 @@ async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
         socket = new WebSocketClient();
         console.log( "socket:", socket );
         socket.on( 'connect', openConnection );
+	socket.on( 'close', () => {
+	    console.log( "connection closed! reconnecting..." );
+	    socket.connect( relay );
+	});
         socket.connect( relay );
     } else {
         var returnable = '{"status": "failure"}';
@@ -1116,6 +1124,10 @@ async function openConnection( connection ) {
             socket = new WebSocketClient();
             console.log( "socket:", socket );
             socket.on( 'connect', openConnection );
+	    socket.on( 'close', () => {
+	        console.log( "connection closed! reconnecting..." );
+	        socket.connect( relay );
+	    });
             socket.connect( relay );
             return;
           }
@@ -1164,6 +1176,10 @@ async function openConnection( connection ) {
             socket = new WebSocketClient();
             console.log( "socket:", socket );
             socket.on( 'connect', openConnection );
+	    socket.on( 'close', () => {
+	        console.log( "connection closed! reconnecting..." );
+	        socket.connect( relay );
+	    });
             socket.connect( relay );
         }, 1000 * 60 * 10 );
     }
