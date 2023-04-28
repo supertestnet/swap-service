@@ -6,7 +6,7 @@ THESE NEXT LINES ARE CUSTOMIZABLE SETTINGS
 
 var invoicemac = "";
 var adminmac = "";
-var lndendpoint = "";
+var lndendpoint = ""; //e.g. https://127.0.0.1:8080 or https://cloud-59.voltage.com
 var min_amount = 546;
 var max_amount = 1000000;
 var fee_type = "percentage"; //alternative: "absolute"
