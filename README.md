@@ -7,6 +7,10 @@ Go here for mainnet: https://supertestnet.github.io/swap-service/
 
 Or here for testnet: https://supertestnet.github.io/swap-service/testnet.html
 
+# Video
+
+[![](https://supertestnet.github.io/swap-service/swap-service-screenshot-with-youtube-logo.png)](https://www.youtube.com/watch?v=mVWufwzQ_RI)
+
 # Instructions for yield chasers
 
 [Click here](#installation) if you have a lightning node and want to use this tool to earn some money and accrue yield on your bitcoin
