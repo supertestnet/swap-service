@@ -55,7 +55,7 @@ You can get your admin macaroon and invoice macaroon from tools like Thunderhub 
 
 Save your file: `hit ctrl+o (that's an o as in output not a 0) and then, after about half a second, hit the enter key`
 
-Run the app: `node index.js` (or `nano testnet.js`)
+Run the app: `node index.js` (or `node testnet.js`)
 
 And you're done! Your node should automatically perform submarine swaps with anyone who accepts your offer and you will earn fees for it.
 
