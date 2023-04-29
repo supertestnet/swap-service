@@ -185,13 +185,13 @@
       var getRand = (size) => crypto.getRandomValues(new Uint8Array(size));
       var sha256 = bitcoinjs.crypto.sha256;
       var keypair = bitcoinjs.ECPair.makeRandom();
-      // var privKey = keypair.privateKey.toString( "hex" )
-      // var pubKey  = keypair.publicKey.toString( "hex" )
-      // pubKey      = pubKey.substring( 2 )
-      var privKey =
-        "48af5b91b2eb1cab92c7243cf105adc39257fe986da28eb06c33faf3e8704ea7";
-      var pubKey =
-        "659636f537c5efd513d484efdd3571a3db8753e93ee4b16339f965fcbf5f2178";
+      var privKey = keypair.privateKey.toString( "hex" )
+      var pubKey  = keypair.publicKey.toString( "hex" )
+      pubKey      = pubKey.substring( 2 )
+//       var privKey =
+//         "48af5b91b2eb1cab92c7243cf105adc39257fe986da28eb06c33faf3e8704ea7";
+//       var pubKey =
+//         "659636f537c5efd513d484efdd3571a3db8753e93ee4b16339f965fcbf5f2178";
       console.log(pubKey);
       var relay = "wss://relay1.nostrchat.io";
       // var relay = "ws://192.168.1.4:6969";
