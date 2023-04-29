@@ -429,7 +429,7 @@ async function loopTilAddressSendsMoney( address, recovery_info ) {
                     //check how many confs the deposit tx has
                     var confs = await howManyConfs( txid );
                     console.log( confs );
-                    if ( Number( confs ) > 39 ) {
+                    if ( Number( confs ) > 11 ) {
                         console.log( "time to sweep!" );
                         //sweep the deposit into the recovery address
                         var recovery_tx = recoverSats( privkey, txid, vout, amount, recovery_address, amount - 500, 40 );
