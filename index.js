@@ -97,8 +97,8 @@ function postData( url, json, headers ) {
 
 async function getMinFeeRate() {
 	var fees = await getData( "https://mempool.space/api/v1/fees/recommended" );
-	if ( !( "minimumFee" in fees ) ) return "error -- site down";
-	var minfee = fees[ "minimumFee" ];
+	if ( !( "hourFee" in fees ) ) return "error -- site down";
+	var minfee = fees[ "hourFee" ];
 	return minfee;
 }
 
