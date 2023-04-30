@@ -69,3 +69,4 @@ And you're done! Your node should automatically perform submarine swaps with any
 
 - A lot of credit goes to https://twitter.com/FPupusas for helping me  build this
 - Thanks also to [Boltz Exchange](https://boltz.exchange/) for immediately finding a critical zero day vulnerability when I released this -- I was able to fix it in only a few minutes due to their diligent bug reporting
+- Kevin Cai for helping me debug the initial version of this software
