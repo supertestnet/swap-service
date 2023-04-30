@@ -96,6 +96,29 @@ function postData( url, json, headers ) {
     });
 }
 
+function witnessStackToScriptWitness(witness) {
+    let buffer2 = Buffer.allocUnsafe(0);
+    function writeSlice(slice) {
+        buffer2 = Buffer.concat([buffer2, Buffer.from(slice)]);
+    }
+    function writeVarInt(i) {
+        const currentLen = buffer2.length;
+        const varintLen = varuintBitcoin.encodingLength(i);
+        buffer2 = Buffer.concat([buffer2, Buffer.allocUnsafe(varintLen)]);
+        varuintBitcoin.encode(i, buffer2, currentLen);
+    }
+    function writeVarSlice(slice) {
+        writeVarInt(slice.length);
+        writeSlice(slice);
+    }
+    function writeVector(vector) {
+        writeVarInt(vector.length);
+        vector.forEach(writeVarSlice);
+    }
+    writeVector(witness);
+    return buffer2;
+}
+
 async function getMinFeeRate() {
 	var fees = await getData( "https://mempool.space/api/v1/fees/recommended" );
 	if ( !( "hourFee" in fees ) ) return "error -- site down";
