@@ -132,7 +132,7 @@ function generateHtlc(serverPubkey, userPubkey, pmthash, timelock) {
 }
 
 function recoverSats( senderPrivkey, inputtxid, inputindex, fromamount, toaddress, toamount, sequence_number ) {
-    var keyPairSender = bitcoinjs.ECPair.fromPrivateKey( Buffer.from( senderPrivkey, 'hex' ), bitcoinjs.networks.testnet );
+    var keyPairSender = ECPair.fromPrivateKey( Buffer.from( senderPrivkey, 'hex' ), bitcoinjs.networks.testnet );
     var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet })
     .addInput({
         hash: inputtxid,
