@@ -39,7 +39,7 @@ First clone this github repo: `git clone https://github.com/supertestnet/swap-se
 
 Then enter the directory and turn it into a nodejs app: `cd swap-service && npm init -y`
 
-Install the dependencies: `npm i websocket browserify-cipher noble-secp256k1 axios bitcoinjs-lib request ecpair tiny-secp256k1 bolt11`
+Install the dependencies: `npm i websocket browserify-cipher noble-secp256k1 axios bitcoinjs-lib varuint-bitcoin request ecpair tiny-secp256k1 bolt11`
 
 Open the index.js file (or the testnet.js file) in a text editor: `nano index.js` (or `nano testnet.js`)
 
