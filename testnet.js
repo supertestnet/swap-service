@@ -26,6 +26,7 @@ const crypto = require('crypto')
 var socket = new WebSocketClient();
 const axios = require('axios')
 const bitcoinjs = require('bitcoinjs-lib')
+const varuintBitcoin = require( 'varuint-bitcoin' )
 const request = require('request')
 const { ECPairFactory } = require('ecpair')
 const tinysecp = require('tiny-secp256k1')
