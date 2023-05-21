@@ -1,1254 +1,952 @@
-/*
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
+    <script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
+    <script src="https://bundle.run/browserify-cipher@1.0.1"></script>
+    <script src="https://supertestnet.github.io/bitcoin-chess/js/bolt11.js"></script>
+    <script src="https://supertestnet.github.io/bitcoin-chess/js/qrcode.js"></script>
+    <script src="https://bundle.run/buffer@6.0.3"></script>
+    <script src="https://bundle.run/varuint-bitcoin@1.1.2"></script>
+    <script>
+      var Buffer = buffer.Buffer;
+    </script>
+    <style>
+      * {
+        box-sizing: border-box;
+        font-size: 1.15rem;
+        font-family: Arial, sans-serif;
+      }
+      html {
+        max-width: 70ch;
+        padding: 3rem 1rem;
+        margin: auto;
+        line-height: 1.25;
+      }
+      h1 {
+        font-size: 2rem;
+      }
+      h2 {
+        font-size: 1.5rem;
+      }
+      input {
+        line-height: 1.25;
+        width: 100%;
+        height: 1.8rem;
+        font-size: 1.15rem;
+        border: 1px solid grey;
+      }
+      .offer {
+        border: 1px solid black;
+        padding: 1rem;
+        margin-bottom: 1rem;
+      }
+      .offer div {
+        margin-bottom: 1rem;
+      }
+      .offer .fill_in_details {
+        display: none;
+      }
+      .black-bg {
+        display: none;
+        width: 100%;
+        position: fixed;
+        top: 0;
+        left: 0;
+        background-color: black;
+        opacity: .5;
+        width: 100vw;
+        height: 100vh;
+      }
+      .modal {
+          display: none;
+          position: fixed;
+          box-sizing: border-box;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%,-50%);
+          width: 100%;
+          max-width: 560px;
+          background-color: white;
+          border-radius: 1rem;
+          padding: 20px;
+          color: black;
+          text-align: center;
+          word-wrap: break-word;
+      }
+      #popup {
+        display: none;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: #fff;
+        padding: 20px;
+        border: 1px solid #ccc;
+        box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.3);
+        word-wrap: break-word;
+        width: 100%;
+        max-width: 400px;
+      }
+    </style>
+    <script>
+      sessionStorage.clear();
+      function modalVanish() {
+        $( ".black-bg" ).style.display = "none";
+        $( ".modal" ).style.display = "none";
+      }
 
-THESE NEXT LINES ARE CUSTOMIZABLE SETTINGS
+      function hexToBytes(hex) {
+        return Uint8Array.from(
+          hex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
+        );
+      }
 
-*/
-
-var invoicemac = "";
-var adminmac = "";
-var lndendpoint = ""; //e.g. https://127.0.0.1:8080 or https://cloud-59.voltage.com
-var min_amount = 546;
-var max_amount = 1000000;
-var fee_type = "percentage"; //alternative: "absolute"
-var fee = 5; //if fee type is absolute, this integer is a flat rate, e.g. you will get 5 sats per swap; otherwise you get a rate corresponding to e.g. 5% of each swap
-
-/*
-
-END OF CUSTOMIZABLE SETTINGS - DON'T TOUCH ANYTHING AFTER THIS POINT
-
-*/
-
-const ws = require('websocket')
-const WebSocketClient = ws.client;
-const browserifyCipher = require('browserify-cipher')
-const nobleSecp256k1 = require('noble-secp256k1')
-const crypto = require('crypto')
-var socket = new WebSocketClient();
-const axios = require('axios')
-const bitcoinjs = require('bitcoinjs-lib')
-const varuintBitcoin = require( 'varuint-bitcoin' )
-const request = require('request')
-const { ECPairFactory } = require('ecpair')
-const tinysecp = require('tiny-secp256k1')
-const ECPair = ECPairFactory(tinysecp)
-const bolt11 = require('bolt11')
-const fs = require('fs')
-
-var privKey = ECPair.makeRandom().privateKey.toString( "hex" );
-var pubKeyMinus2 = nobleSecp256k1.getPublicKey( privKey, true ).substring( 2 );
-console.log( "my privkey:", privKey );
-console.log( "my pubkey:", pubKeyMinus2 );
-function normalizeRelayURL(e){let[t,...r]=e.trim().split("?");return"http"===t.slice(0,4)&&(t="ws"+t.slice(4)),"ws"!==t.slice(0,2)&&(t="wss://"+t),t.length&&"/"===t[t.length-1]&&(t=t.slice(0,-1)),[t,...r].join("?")}
-var relay = "wss://nostrue.com";
-// var relay = "ws://192.168.1.4:6969";
-relay = normalizeRelayURL( relay );
-var deal_in_progress = false;
-
-class ls {
-  constructor(content) {
-    this.content = {}
-  }
-  setContent( key, value ) {
-    this.content[ key ] = value;
-    var texttowrite = JSON.stringify( this.content );
-    fs.writeFileSync( "localStorage.txt", texttowrite, function() {return;});
-  }
-  removeItem( key ) {
-    delete this.content[ key ];
-    var texttowrite = JSON.stringify( this.content );
-    fs.writeFileSync( "localStorage.txt", texttowrite, function() {return;});
-  }
-}
-
-var localStorage = new ls();
-
-if ( !fs.existsSync( "localStorage.txt" ) ) {
-  var texttowrite = JSON.stringify( localStorage.content );
-  fs.writeFileSync( "localStorage.txt", texttowrite, function() {return;});
-} else {
-  var lstext = fs.readFileSync( "localStorage.txt" ).toString();
-  localStorage.content = JSON.parse( lstext );
-  var texttowrite = JSON.stringify( localStorage.content );
-  fs.writeFileSync( "localStorage.txt", texttowrite, function() {return;});
-}
-
-function getData( url ) {
-	return new Promise( function( resolve, reject ) {
-    	axios
-    	.get( url )
-    	.then( res => {
-        	resolve( res.data );
-    	}).catch( function( error ) {
-            console.log( `axios error involving url ${url}:`, error.message );
-        });
-	});
-}
-
-function postData( url, json, headers ) {
-    return new Promise( function( resolve, reject ) {
-        axios
-        .post( url, json, headers )
-        .then( res => {
-            resolve( res.data );
-        }).catch( function( error ) {
-            console.log( `axios error involving url ${url} and json ${json}:`, error.message );
-        });
-    });
-}
-
-function witnessStackToScriptWitness(witness) {
-    let buffer2 = Buffer.allocUnsafe(0);
-    function writeSlice(slice) {
-        buffer2 = Buffer.concat([buffer2, Buffer.from(slice)]);
-    }
-    function writeVarInt(i) {
-        const currentLen = buffer2.length;
-        const varintLen = varuintBitcoin.encodingLength(i);
-        buffer2 = Buffer.concat([buffer2, Buffer.allocUnsafe(varintLen)]);
-        varuintBitcoin.encode(i, buffer2, currentLen);
-    }
-    function writeVarSlice(slice) {
-        writeVarInt(slice.length);
-        writeSlice(slice);
-    }
-    function writeVector(vector) {
-        writeVarInt(vector.length);
-        vector.forEach(writeVarSlice);
-    }
-    writeVector(witness);
-    return buffer2;
-}
-
-async function getMinFeeRate() {
-	var fees = await getData( "https://mempool.space/api/v1/fees/recommended" );
-	if ( !( "hourFee" in fees ) ) return "error -- site down";
-	var minfee = fees[ "hourFee" ];
-	return minfee;
-}
-
-async function getBlockheight() {
-    var data = await getData( "https://mempool.space/api/blocks/tip/height" );
-    return Number( data );
-}
-
-function generateHtlc(serverPubkey, userPubkey, pmthash, timelock) {
-   return bitcoinjs.script.fromASM(
-        `
-	OP_SIZE
-	${bitcoinjs.script.number.encode(32).toString('hex')}
-	OP_EQUALVERIFY
-        OP_SHA256
-        ${pmthash}
-        OP_EQUAL
-        OP_IF
-        ${userPubkey}
-        OP_ELSE
-        ${bitcoinjs.script.number.encode(timelock).toString('hex')}
-        OP_CHECKLOCKTIMEVERIFY
-        OP_DROP
-        ${serverPubkey}
-        OP_ENDIF
-        OP_CHECKSIG
-        `
-       .trim()
-       .replace(/\s+/g, ' ')
-   );
-}
-
-function recoverSats( senderPrivkey, inputtxid, inputindex, fromamount, toaddress, toamount, sequence_number ) {
-    var keyPairSender = ECPair.fromPrivateKey( Buffer.from( senderPrivkey, 'hex' ), bitcoinjs.networks.mainnet );
-    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.mainnet })
-    .addInput({
-        hash: inputtxid,
-        index: inputindex,
-        sequence: Number( sequence_number ),
-        witnessUtxo: {
-            script: Buffer.from( "0014" + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( keyPairSender.publicKey ) ).toString( "hex" ), "hex" ),
-            value: fromamount,
-        },
-    })
-    .addOutput({
-        address: toaddress,
-        value: toamount,
-    });
-    var getFinalScripts = ( txindex, input, script ) => {
-        // Step 1: Check to make sure the meaningful locking script matches what you expect.
-        var decompiled = bitcoinjs.script.decompile( script )
-        if ( !decompiled ) {
-            throw new Error( `Can not finalize input #${txindex}` )
+      function isValidAddress(address) {
+        try {
+          return (
+            typeof bitcoinjs.address.toOutputScript(
+              address,
+              bitcoinjs.networks.mainnet
+            ) == "object"
+          );
+        } catch (e) {
+          return;
         }
+      }
+      function hexToBytes(hex) {
+        return Uint8Array.from(
+          hex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
+        );
+      }
 
-        // Step 2: Create final scripts
-        var witnessStack = bitcoinjs.payments.p2wsh({
-            redeem: {
-                output: script,
-                input: bitcoinjs.script.compile([
-                    input.partialSig[0].signature,
-                    Buffer.from( ECPair.makeRandom().privateKey.toString( "hex" ), "hex" ),
-                 ]),
-            }
-        });
-        return {
-            finalScriptWitness: witnessStackToScriptWitness( witnessStack.witness )
+      function base64ToHex(str) {
+        var raw = atob(str);
+        var result = "";
+        var i;
+        for (i = 0; i < raw.length; i++) {
+          var hex = raw.charCodeAt(i).toString(16);
+          result += hex.length === 2 ? hex : "0" + hex;
         }
-    }
-    psbt.signInput( 0, ECPair.fromPrivateKey( Buffer.from( senderPrivkey, "hex" ) ) );
-    psbt.finalizeInput( 0, getFinalScripts );
-    return psbt.extractTransaction().toHex();
-}
+        return result;
+      }
+      function encrypt(privkey, pubkey, text) {
+        var key = nobleSecp256k1
+          .getSharedSecret(privkey, "02" + pubkey, true)
+          .substring(2);
+        var iv = window.crypto.getRandomValues(new Uint8Array(16));
+        var cipher = browserifyCipher.createCipheriv(
+          "aes-256-cbc",
+          hexToBytes(key),
+          iv
+        );
+        var encryptedMessage = cipher.update(text, "utf8", "base64");
+        emsg = encryptedMessage + cipher.final("base64");
+        var uint8View = new Uint8Array(iv.buffer);
+        var decoder = new TextDecoder();
+        return emsg + "?iv=" + btoa(String.fromCharCode.apply(null, uint8View));
+      }
 
-function getSwapAddress( serverPubkey, userPubkey, pmthash, timelock ) {
-    var witnessscript = generateHtlc( serverPubkey, userPubkey, pmthash, timelock );
-    var p2wsh = bitcoinjs.payments.p2wsh({redeem: {output: witnessscript, network: bitcoinjs.networks.mainnet}, network: bitcoinjs.networks.mainnet });
-    return p2wsh.address;
-}
+      function decrypt(privkey, pubkey, ciphertext) {
+        var [emsg, iv] = ciphertext.split("?iv=");
+        var key = nobleSecp256k1
+          .getSharedSecret(privkey, "02" + pubkey, true)
+          .substring(2);
+        var decipher = browserifyCipher.createDecipheriv(
+          "aes-256-cbc",
+          hexToBytes(key),
+          hexToBytes(base64ToHex(iv))
+        );
+        var decryptedMessage = decipher.update(emsg, "base64");
+        dmsg = decryptedMessage + decipher.final("utf8");
+        return dmsg;
+      }
+    </script>
+    <script>
+      var $ = document.querySelector.bind(document);
+      var $$ = document.querySelectorAll.bind(document);
+    </script>
+  </head>
+  <body>
+    <h1>Nostr Swap Service</h1>
+    <p>Where Nostr users trade sats on LN for sats on the base layer</p>
+    <h2>Order Book</h2>
+    <div class="orderbook"></div>
+    <div id="popup">
+      <p id="popupText">Popup Text</p>
+    </div>
+    <script>
+      var seen_ids = [];
+      var $ = document.querySelector.bind(document);
+      var $$ = document.querySelectorAll.bind(document);
+      var { getSharedSecret, schnorr, utils } = nobleSecp256k1;
+      var crypto = window.crypto;
+      var getRand = (size) => crypto.getRandomValues(new Uint8Array(size));
+      var sha256 = bitcoinjs.crypto.sha256;
+      var keypair = bitcoinjs.ECPair.makeRandom();
+      var privKey = keypair.privateKey.toString( "hex" )
+      var pubKey  = keypair.publicKey.toString( "hex" )
+      pubKey      = pubKey.substring( 2 )
+//       var privKey =
+//         "48af5b91b2eb1cab92c7243cf105adc39257fe986da28eb06c33faf3e8704ea7";
+//       var pubKey =
+//         "659636f537c5efd513d484efdd3571a3db8753e93ee4b16339f965fcbf5f2178";
+      console.log(pubKey);
+      var relay = "wss://relay1.nostrchat.io";
+      // var relay = "ws://192.168.1.4:6969";
+      var socket = new WebSocket(relay);
 
-function bytesToHex( bytes ) {
-    return bytes.reduce( ( str, byte ) => str + byte.toString( 16 ).padStart( 2, "0" ), "" );
-}
-
-function sha256( string ) {
-	return crypto.createHash( "sha256" ).update( string ).digest( "hex" );
-}
-
-function encrypt( privkey, pubkey, text ) {
-	var key = nobleSecp256k1.getSharedSecret( privkey, '02' + pubkey, true ).substring( 2 );
-	var iv = Uint8Array.from( crypto.randomBytes( 16 ) )
-	var cipher = browserifyCipher.createCipheriv(
-    	'aes-256-cbc',
-    	Buffer.from( key, 'hex' ),
-    	iv
-	);
-    console.log( "latest error:", privkey, pubkey, text );
-	var encryptedMessage = cipher.update( text, "utf8", "base64" );
-	var emsg = encryptedMessage + cipher.final( "base64" );
-
-	return emsg + "?iv=" + Buffer.from( iv.buffer ).toString( "base64");
-}
-
-function decrypt( privkey, pubkey, ciphertext ) {
-	var [ emsg, iv ] = ciphertext.split( "?iv=" );
-	var key = nobleSecp256k1.getSharedSecret( privkey, '02' + pubkey, true ).substring( 2 );
-	var decipher = browserifyCipher.createDecipheriv(
-    	'aes-256-cbc',
-    	Buffer.from( key, "hex" ),
-    	Buffer.from( iv, "base64" )
-	);
-	var decryptedMessage = decipher.update( emsg, "base64" );
-	try {
-		var dmsg = decryptedMessage + decipher.final( "utf8" );
-	} catch( e ) {
-		var dmsg = "error decrypting message -- the message was malformed";
-	}
-
-	return dmsg;
-}
-
-async function estimateExpiry( pmthash ) {
-    //use the creation date of the invoice that pays me to estimate the block when that invoice was created
-    //do that by getting the current unix timestamp, the current blockheight, and the invoice creation timestamp,
-    var invoice_creation_timestamp = await getInvoiceCreationTimestamp( pmthash );
-    invoice_creation_timestamp = Number( invoice_creation_timestamp );
-    var current_unix_timestamp = Number( Math.floor( Date.now() / 1000 ) );
-    var current_blockheight = await getBlockheight();
-    current_blockheight = Number( current_blockheight );
-    //then subtract X units of 600 seconds from the current timestamp til it is less than the invoice creation timestmap,
-    var units_of_600 = 0;
-    var i; for ( i=0; i<1008; i++ ) {
-        var interim_unix_timestamp = current_unix_timestamp - ( ( ( units_of_600 ) + 1 ) * 600 );
-        units_of_600 = units_of_600 + 1
-        if ( interim_unix_timestamp < invoice_creation_timestamp ) {
-            break;
-        }
-    }
-    //then subtract X from the current blockheight to get an estimated block when my invoice was created, then add 900 to it
-    //assign the result to a variable called block_when_i_consider_the_invoice_that_pays_me_to_expire
-    var block_when_i_consider_the_invoice_that_pays_me_to_expire = ( current_blockheight - units_of_600 ) + 900;
-/*
-    //get the current blockheight and, to it, add the cltv_expiry value of the invoice I am asked to pay (should be 40 usually)
-    //assign the result to a variable called block_when_i_consider_the_invoice_i_am_asked_to_pay_to_expire
-    var expiry_of_invoice_that_pays_me = await getInvoiceHardExpiry( pmthash );
-    var expiry_of_invoice_i_am_asked_to_pay = await get_hard_expiry_of_invoice_i_am_asked_to_pay( invoice );
-    var block_when_i_consider_the_invoice_i_am_asked_to_pay_to_expire = current_blockheight + Number( expiry_of_invoice_i_am_asked_to_pay );
-    //abort if block_when_i_consider_the_invoice_i_am_asked_to_pay_to_expire > block_when_i_consider_the_invoice_that_pays_me_to_expire
-    if ( Number( block_when_i_consider_the_invoice_i_am_asked_to_pay_to_expire ) > Number( block_when_i_consider_the_invoice_that_pays_me_to_expire ) ) {
-        return "nice try, asking me to pay you when the invoice that pays me is about to expire";
-    }
-    //because that would mean the recipient can hold my payment til after the invoice that pays me expires
-    //then he could settle my payment to him but leave me unable to reimburse myself (because the invoice that pays me expired)
-    //also, when sending my payment, remember to set the cltv_limit value
-    //it should be positive and equal to block_when_i_consider_the_invoice_that_pays_me_to_expire - current_blockheight
-    var cltv_limit = block_when_i_consider_the_invoice_that_pays_me_to_expire - current_blockheight;
-*/
-    var returnable = {}
-    return block_when_i_consider_the_invoice_that_pays_me_to_expire;
-}
-
-async function getHodlInvoice( amount, hash, expiry = 40 ) {
-  var invoice = "";
-  var macaroon = invoicemac;
-  var endpoint = lndendpoint + "/v2/invoices/hodl";
-  let requestBody = {
-      hash: Buffer.from( hash, "hex" ).toString( "base64" ),
-      value: amount.toString(),
-      cltv_expiry: expiry.toString(),
-  }
-  let options = {
-    url: endpoint,
-    // Work-around for self-signed certificates.
-    rejectUnauthorized: false,
-    json: true,
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-    },
-    form: JSON.stringify(requestBody),
-  }
-  request.post(options, function(error, response, body) {
-    invoice = body[ "payment_request" ];
-    console.log( "hodl invoice:", body );
-  });
-  async function isNoteSetYet( note_i_seek ) {
-          return new Promise( function( resolve, reject ) {
-                  if ( note_i_seek == "" ) {
-                          setTimeout( async function() {
-                                  var msg = await isNoteSetYet( invoice );
-                                  resolve( msg );
-                          }, 100 );
-                  } else {
-                          resolve( note_i_seek );
-                  }
-          });
-    }
-    async function getTimeoutData() {
-            var invoice_i_seek = await isNoteSetYet( invoice );
-            return invoice_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function settleHoldInvoice( preimage ) {
-  var settled = "";
-  const macaroon = invoicemac;
-  const endpoint = lndendpoint;
-  let requestBody = {
-      preimage: Buffer.from( preimage, "hex" ).toString( "base64" )
-  }
-  let options = {
-    url: endpoint + '/v2/invoices/settle',
-    // Work-around for self-signed certificates.
-    rejectUnauthorized: false,
-    json: true,
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-    },
-    form: JSON.stringify( requestBody ),
-  }
-  request.post( options, function( error, response, body ) {
-    if ( body.toString().includes( "{" ) ) {
-        settled = "true";
-    } else {
-        settled = "false";
-    }
-  });
-  async function isNoteSetYet( note_i_seek ) {
-          return new Promise( function( resolve, reject ) {
-                  if ( note_i_seek == "" ) {
-                          setTimeout( async function() {
-                                  var msg = await isNoteSetYet( settled );
-                                  resolve( msg );
-                          }, 100 );
-                  } else {
-                          resolve( note_i_seek );
-                  }
-          });
-    }
-    async function getTimeoutData() {
-            var invoice_i_seek = await isNoteSetYet( settled );
-            return invoice_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;   
-}
-
-async function howManyConfs( txid ) {
-    var blockheight = await getBlockheight();
-    return new Promise( async function( resolve, reject ) {
-        var json = await getData( `https://mempool.space/api/tx/` + txid );
-        if ( json[ "status" ][ "confirmed" ] ) {
-            resolve( ( Number( blockheight ) - Number( json[ "status" ][ "block_height" ] ) ) + 1 );
-        } else {
-            resolve( "0".toString() );
-        }
-    });
-}
-
-async function getAddress() {
-  var address = "";
-  var macaroon = invoicemac;
-  var endpoint = lndendpoint + "/v2/wallet/address/next";
-  let requestBody = {
-    account: "",
-    type: 1,
-    change: false,
-  };
-  let options = {
-    url: endpoint,
-    // Work-around for self-signed certificates.
-    rejectUnauthorized: false,
-    json: true,
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-    },
-    form: JSON.stringify(requestBody),
-  }
-  request.post(options, function(error, response, body) {
-    address = body[ "addr" ];
-  });
-  async function isNoteSetYet( note_i_seek ) {
-        return new Promise( function( resolve, reject ) {
-            if ( !note_i_seek ) {
-                setTimeout( async function() {
-                    var msg = await isNoteSetYet( address );
-                    resolve( msg );
-                }, 100 );
-            } else {
-                resolve( note_i_seek );
-            }
-        });
-    }
-    async function getTimeoutData() {
-            var address_i_seek = await isNoteSetYet( address );
-            return address_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function addressOnceSentMoney( address ) {
-    var json = await getData( "https://mempool.space/api/address/" + address );
-    if ( json[ "chain_stats" ][ "spent_txo_count" ] > 0 || json[ "mempool_stats" ][ "spent_txo_count" ] > 0 ) {
-        return true;
-    }
-    return false;
-}
-
-async function getVout( txid, address, value, network ) {
-    var vout = -1;
-    var txinfo = await getData( `https://mempool.space/${network}api/tx/${txid}` );
-    txinfo[ "vout" ].every( function( output, index ) {
-        if ( output[ "scriptpubkey_address" ] == address && output[ "value" ] == value ) {vout = index;return;} return true;
-    });
-    return vout;
-}
-
-async function loopTilAddressSendsMoney( address, recovery_info ) {
-    var [ privkey, txid, vout, amount, confs_to_wait, recovery_address ] = recovery_info;
-    //localStorage.content[ "privkey" ], txid_of_deposit, vout, Number( amount ), 40, recovery_address
-    var itSpentMoney = false;
-    async function isDataSetYet( data_i_seek ) {
-        return new Promise( function( resolve, reject ) {
-            if ( !data_i_seek ) {
-                setTimeout( async function() {
-                    //check how many confs the deposit tx has
-                    var confs = await howManyConfs( txid );
-                    console.log( confs );
-                    if ( Number( confs ) > 11 ) {
-                        console.log( "time to sweep!" );
-                        //sweep the deposit into the recovery address
-                        var recovery_tx = recoverSats( privkey, txid, vout, amount, recovery_address, amount - 500, 40 );
-                        await pushBTCpmt( recovery_tx );
-                        resolve( "recovered" );
-                    }
-                    console.log( "checking for preimage in mempool..." );
-                    itSpentMoney = await addressOnceSentMoney( address );
-                    var msg = await isDataSetYet( itSpentMoney );
-                    resolve( msg );
-                }, 2000 );
-            } else {
-                resolve( data_i_seek );
-            }
-        });
-    }
-    async function getTimeoutData() {
-        var data_i_seek = await isDataSetYet( itSpentMoney );
-        return data_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function addressSentMoneyInThisTx( address, txid_of_deposit ) {
-    var txid;
-    var json = await getData( "https://mempool.space/api/address/" + address + "/txs" );
-    json.forEach( function( tx ) {
-        tx[ "vin" ].forEach( function( input ) {
-            if ( input[ "txid" ] == txid_of_deposit ) {
-                console.log( "txid that spent from the htlc:", tx[ "txid" ] );
-                txid = tx[ "txid" ];
-            }
-        });
-    });
-    console.log( "double checking that I have the txid that spent from the htlc:", txid );
-    return txid;
-}
-
-async function pushBTCpmt( rawtx, network ) {
-    var txid = await postData( "https://mempool.space/" + network + "api/tx", rawtx );
-    return txid;
-}
-
-async function payHTLCAndSettleWithPreimage( invoice, htlc_address, amount ) {
-    var txid_of_deposit = "";
-    var users_pmthash = getinvoicepmthash( invoice );
-    var state_of_held_invoice_with_that_hash = await checkInvoiceStatus( users_pmthash );
-    if ( state_of_held_invoice_with_that_hash != "ACCEPTED" ) {
-        deal_in_progress = false;
-        socket = {}
-        console.log( "socket:", socket );
-        socket = new WebSocketClient();
-        console.log( "socket:", socket );
-        socket.on( 'connect', openConnection );
-	socket.on( 'close', () => {
-	    console.log( "connection closed! reconnecting..." );
-	    socket.connect( relay );
-	});
-        socket.connect( relay );
-        return "nice try, asking me to pay an invoice without compensation: " + state_of_held_invoice_with_that_hash;
-    }
-    var amount_i_will_receive = await getInvoiceAmount( users_pmthash );
-    var amount_i_am_asked_to_pay = get_amount_i_am_asked_to_pay( invoice );
-    if ( Number( amount_i_will_receive ) < Number( amount_i_am_asked_to_pay ) ) {
-        return "nice try, asking me to send more than I will receive as compensation";
-    }
-    //use the creation date of the invoice that pays me to estimate the block when that invoice was created
-    //do that by getting the current unix timestamp, the current blockheight, and the invoice creation timestamp,
-    var invoice_creation_timestamp = await getInvoiceCreationTimestamp( users_pmthash );
-    invoice_creation_timestamp = Number( invoice_creation_timestamp );
-    var current_unix_timestamp = Number( Math.floor( Date.now() / 1000 ) );
-    var current_blockheight = await getBlockheight();
-    current_blockheight = Number( current_blockheight );
-    //then subtract X units of 600 seconds from the current timestamp til it is less than the invoice creation timestmap,
-    var units_of_600 = 0;
-    var i; for ( i=0; i<1008; i++ ) {
-        var interim_unix_timestamp = current_unix_timestamp - ( ( ( units_of_600 ) + 1 ) * 600 );
-        units_of_600 = units_of_600 + 1
-        if ( interim_unix_timestamp < invoice_creation_timestamp ) {
-            break;
-        }
-    }
-    //then subtract X from the current blockheight to get an estimated block when my invoice was created, then add 900 to it
-    //assign the result to a variable called block_when_i_consider_the_invoice_that_pays_me_to_expire
-    var block_when_i_consider_the_invoice_that_pays_me_to_expire = ( current_blockheight - units_of_600 ) + 900;
-    //get the current blockheight and, to it, add the cltv_expiry value of the invoice I am asked to pay (should be 40 usually)
-    //assign the result to a variable called block_when_i_consider_the_invoice_i_am_asked_to_pay_to_expire
-    var expiry_of_invoice_that_pays_me = await getInvoiceHardExpiry( users_pmthash );
-    var adminmacaroon = adminmac;
-    var endpoint = lndendpoint;
-    var feerate = await getMinFeeRate();
-    let requestBody = {
-        addr: htlc_address,
-        amount: String( amount ),
-        sat_per_byte: String( feerate )
-    }
-    let options = {
-        url: endpoint + '/v1/transactions',
-        // Work-around for self-signed certificates.
-        rejectUnauthorized: false,
-        json: true,
-        headers: {
-          'Grpc-Metadata-macaroon': adminmacaroon,
-        },
-        form: JSON.stringify( requestBody ),
-    }
-    request.post( options, function( error, response, body ) {
-        txid_of_deposit = ( body[ "txid" ] );
-        console.log( "body:", body );
-        console.log( "txid_of_deposit:", txid_of_deposit );
-    });
-    async function isDataSetYet( data_i_seek ) {
-        return new Promise( function( resolve, reject ) {
-            if ( data_i_seek == "" ) {
-                setTimeout( async function() {
-                    var msg = await isDataSetYet( txid );
-                    resolve( msg );
-                }, 100 );
-            } else {
-                resolve( data_i_seek );
-            }
-        });
-    }
-    async function getTimeoutData() {
-        var data_i_seek = await isDataSetYet( txid );
-        return data_i_seek;
-    }
-    //todo: while looping, if address doesn't send money before timelock expires, sweep money back to self
-    //to do that, I must send the privkey (localStorage.content[ "privkey" ]), the txid (txid_of_deposit),
-    //the output number, the value of the deposit (Number( amount )), the number of confs to wait (40), and an address obtained
-    //from lnd to loopTilAddressSendsMoney. Then, when that function loops, it should check how many confs
-    //the deposit tx has, and, if it has more than 40, sweep the money to the address obtained from lnd
-    await waitSomeSeconds( 30 );
-    var vout = await getVout( txid_of_deposit, htlc_address, Number( amount ), "" );
-    console.log( "vout:", vout );
-    var recovery_address = await getAddress();
-    var recovery_info = [localStorage.content[ "privkey" ], txid_of_deposit, vout, Number( amount ), 40, recovery_address];
-    var itSentMoney = await loopTilAddressSendsMoney( htlc_address, recovery_info );
-    if ( itSentMoney == "recovered" ) {
-        return '{"status": "failure", "reason": "The buyer never swept their money so we swept it back"}';
-    }
-    console.log( "moving on" );
-    await waitSomeSeconds( 3 );
-    var txid_that_sweeps_htlc = await addressSentMoneyInThisTx( htlc_address, txid_of_deposit );
-    await waitSomeSeconds( 3 );
-    var preimage_for_settling_invoice_that_pays_me = await getPreimageFromTransactionThatSpendsAnHTLC( txid_that_sweeps_htlc, users_pmthash );
-    if ( preimage_for_settling_invoice_that_pays_me != "" ) {
-        //preimage_for_settling_invoice_that_pays_me = Buffer.from( preimage_for_settling_invoice_that_pays_me, "base64" ).toString( "hex" );
-        console.log( "preimage that pays me:", preimage_for_settling_invoice_that_pays_me );
-        settleHoldInvoice( preimage_for_settling_invoice_that_pays_me );
-        var returnable = '{"status": "success","preimage":"' + preimage_for_settling_invoice_that_pays_me + '"}';
-        socket = {}
-        console.log( "socket:", socket );
-        socket = new WebSocketClient();
-        console.log( "socket:", socket );
-        socket.on( 'connect', openConnection );
-	socket.on( 'close', () => {
-	    console.log( "connection closed! reconnecting..." );
-	    socket.connect( relay );
-	});
-        socket.connect( relay );
-    } else {
-        var returnable = '{"status": "failure"}';
-    }
-    console.log( "deal is in progress, right?", deal_in_progress );
-    deal_in_progress = false;
-    console.log( "what about now? It is in progress, right? (I actually don't want it to be)", deal_in_progress );
-    return returnable;
-}
-
-function waitSomeSeconds( num ) {
-    var num = num.toString() + "000";
-    num = Number( num );
-    return new Promise( function( resolve, reject ) {
-        setTimeout( function() { resolve( "" ); }, num );
-    });
-}
-
-
-function get_amount_i_am_asked_to_pay( invoice ) {
-    var decoded = bolt11.decode( invoice );
-    var amount = decoded[ "satoshis" ].toString();
-    return amount;
-}
-
-async function getInvoiceAmount( hash ) {
-  var amount = "";
-  const macaroon = invoicemac;
-  const endpoint = lndendpoint;
-  let options = {
-    url: endpoint + '/v1/invoice/' + hash,
-    // Work-around for self-signed certificates.
-    rejectUnauthorized: false,
-    json: true,
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-    },
-  }
-  request.get( options, function( error, response, body ) {
-    amount = body[ "value" ];
-  });
-  async function isDataSetYet( data_i_seek ) {
-          return new Promise( function( resolve, reject ) {
-                  if ( data_i_seek == "" ) {
-                          setTimeout( async function() {
-                                  var msg = await isDataSetYet( amount );
-                                  resolve( msg );
-                          }, 100 );
-                  } else {
-                          resolve( data_i_seek );
-                  }
-          });
-    }
-    async function getTimeoutData() {
-            var data_i_seek = await isDataSetYet( amount );
-            return data_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function checkInvoiceStatusWithoutLoop( hash ) {
-  var status = "";
-  const macaroon = invoicemac;
-  const endpoint = lndendpoint;
-  let options = {
-    url: endpoint + '/v1/invoice/' + hash,
-    // Work-around for self-signed certificates.
-    rejectUnauthorized: false,
-    json: true,
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-    },
-  }
-  request.get( options, function( error, response, body ) {
-    status = body[ "state" ];
-    console.log( "status:", status );
-  });
-  async function isDataSetYet( data_i_seek ) {
-          return new Promise( function( resolve, reject ) {
-                  if ( data_i_seek == "" ) {
-                          setTimeout( async function() {
-                                  var msg = await isDataSetYet( status );
-                                  resolve( msg );
-                          }, 100 );
-                  } else {
-                          resolve( data_i_seek );
-                  }
-          });
-    }
-    async function getTimeoutData() {
-            var data_i_seek = await isDataSetYet( status );
-            return data_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function checkInvoiceStatus( hash ) {
-  var status = "";
-  const macaroon = invoicemac;
-  const endpoint = lndendpoint;
-  let options = {
-    url: endpoint + '/v1/invoice/' + hash,
-    // Work-around for self-signed certificates.
-    rejectUnauthorized: false,
-    json: true,
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-    },
-  }
-  request.get( options, function( error, response, body ) {
-    status = body[ "state" ];
-    console.log( "status:", status );
-  });
-  var time = 0;
-  async function isDataSetYet( data_i_seek ) {
-          return new Promise( function( resolve, reject ) {
-                  if ( data_i_seek != "ACCEPTED" ) {
-                          setTimeout( async function() {
-                                  time = time + 1;
-                                  console.log( "time:", time )
-                                  if ( time == 1000 || time > 1000 ) {
-                                    resolve( "failure" );
-                                    return;
-                                  }
-                                  console.log( "checking if buyer sent payment yet..." );
-                                  status = await checkInvoiceStatusWithoutLoop( hash );
-                                  var msg = await isDataSetYet( status );
-                                  resolve( msg );
-                          }, 100 );
-                  } else {
-                          resolve( data_i_seek );
-                  }
-          });
-    }
-    async function getTimeoutData() {
-            var data_i_seek = await isDataSetYet( status );
-            return data_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function getInvoiceCreationTimestamp( hash ) {
-  var timestamp = "";
-  const macaroon = invoicemac;
-  const endpoint = lndendpoint;
-  let options = {
-    url: endpoint + '/v1/invoice/' + hash,
-    // Work-around for self-signed certificates.
-    rejectUnauthorized: false,
-    json: true,
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-    },
-  }
-  request.get( options, function( error, response, body ) {
-    timestamp = body[ "creation_date" ];
-  });
-  async function isDataSetYet( data_i_seek ) {
-          return new Promise( function( resolve, reject ) {
-                  if ( data_i_seek == "" ) {
-                          setTimeout( async function() {
-                                  var msg = await isDataSetYet( timestamp );
-                                  resolve( msg );
-                          }, 100 );
-                  } else {
-                          resolve( data_i_seek );
-                  }
-          });
-    }
-    async function getTimeoutData() {
-            var data_i_seek = await isDataSetYet( timestamp );
-            return data_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function getInvoiceHardExpiry( hash ) {
-  var expiry = "";
-  const macaroon = invoicemac;
-  const endpoint = lndendpoint;
-  let options = {
-    url: endpoint + '/v1/invoice/' + hash,
-    // Work-around for self-signed certificates.
-    rejectUnauthorized: false,
-    json: true,
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-    },
-  }
-  request.get( options, function( error, response, body ) {
-    expiry = body[ "cltv_expiry" ];
-  });
-  async function isDataSetYet( data_i_seek ) {
-          return new Promise( function( resolve, reject ) {
-                  if ( data_i_seek == "" ) {
-                          setTimeout( async function() {
-                                  var msg = await isDataSetYet( expiry );
-                                  resolve( msg );
-                          }, 100 );
-                  } else {
-                          resolve( data_i_seek );
-                  }
-          });
-    }
-    async function getTimeoutData() {
-            var data_i_seek = await isDataSetYet( expiry );
-            return data_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function get_hard_expiry_of_invoice_i_am_asked_to_pay( invoice ) {
-    var decoded = bolt11.decode( invoice );
-    var i; for ( i=0; i<decoded[ "tags" ].length; i++ ) {
-        if ( decoded[ "tags" ][ i ][ "tagName" ] == "min_final_cltv_expiry" ) {
-            var cltv_expiry = decoded[ "tags" ][ i ][ "data" ].toString();
-        }
-    }
-    return cltv_expiry;
-}
-
-function getinvoicepmthash( invoice ) {
-    var decoded = bolt11.decode( invoice );
-    var i; for ( i=0; i<decoded[ "tags" ].length; i++ ) {
-        if ( decoded[ "tags" ][ i ][ "tagName" ] == "payment_hash" ) {
-            var pmthash = decoded[ "tags" ][ i ][ "data" ].toString();
-        }
-    }
-    return pmthash;
-}
-
-async function setNote( note, recipientpubkey, relay ) {
-    var temp_socket = new WebSocketClient();
-    var id = "";
-    temp_socket.on( "error", function( error ) {
-        console.log( "error:", error );
-    });
-    temp_socket.on( "connect", function( connection ) {
-        function send( note, recipientpubkey ) {
-            var now = Math.floor( ( new Date().getTime() ) / 1000 );
-            var privatenote = encrypt( privKey, recipientpubkey, note );
-            var newevent = [
-                0,
-                pubKeyMinus2,
-                now,
-                4,
-                [['p', recipientpubkey]],
-                privatenote
-            ];
-            var message = JSON.stringify( newevent );
-            var msghash = sha256( message );
-            nobleSecp256k1.schnorr.sign( msghash, privKey ).then(
-                value => {
-                    var sig = value;
-                    nobleSecp256k1.schnorr.verify(
-                        sig,
-                        msghash,
-                        pubKeyMinus2
-                    ).then(
-                        value => {
-                            if ( value ) {
-                                var fullevent = {
-                                    "id": msghash,
-                                    "pubkey": pubKeyMinus2,
-                                    "created_at": now,
-                                    "kind": 4,
-                                    "tags": [['p', recipientpubkey]],
-                                    "content": privatenote,
-                                    "sig": sig
-                                }
-                                var sendable = [ "EVENT", fullevent ];
-                                sendable = JSON.stringify( sendable );
-                                connection.sendUTF( sendable );
-                                id = msghash;
-                                setTimeout( function() {connection.close();}, 300 );
-                            }
-                        }
-                    );
-                }
-            );
-        }
-        send( note, recipientpubkey, relay );
-    });
-    temp_socket.connect( relay );
-    async function isNoteSetYet( note_i_seek ) {
-        return new Promise( function( resolve, reject ) {
-            if ( note_i_seek == "" ) {
-                setTimeout( async function() {
-                    var msg = await isNoteSetYet( id );
-                    resolve( msg );
-                }, 100 );
-            } else {
-                resolve( note_i_seek );
-            }
-        });
-    }
-    async function getTimeoutData() {
-        var note_i_seek = await isNoteSetYet( id );
-        return note_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-async function setPublicNote( note, relay ) {
-    var temp_socket = new WebSocketClient();
-    var id = "";
-    temp_socket.on( "error", function( error ) {
-        console.log( "error:", error );
-    });
-    temp_socket.on( "connect", function( connection ) {
-        function send( note ) {
-            var now = Math.floor( ( new Date().getTime() ) / 1000 );
-            var newevent = [
-                0,
-                pubKeyMinus2,
-                now,
-                10043,
-                [],
-                note
-            ];
-            var message = JSON.stringify( newevent );
-            var msghash = sha256( message );
-            nobleSecp256k1.schnorr.sign( msghash, privKey ).then(
-                value => {
-                    var sig = value;
-                    nobleSecp256k1.schnorr.verify(
-                        sig,
-                        msghash,
-                        pubKeyMinus2
-                    ).then(
-                        value => {
-                            if ( value ) {
-                                var fullevent = {
-                                    "id": msghash,
-                                    "pubkey": pubKeyMinus2,
-                                    "created_at": now,
-                                    "kind": 10043,
-                                    "tags": [],
-                                    "content": note,
-                                    "sig": sig
-                                }
-                                var sendable = [ "EVENT", fullevent ];
-                                sendable = JSON.stringify( sendable );
-                                connection.sendUTF( sendable );
-                                id = msghash;
-                                setTimeout( function() {connection.close();}, 300 );
-                            }
-                        }
-                    );
-                }
-            );
-        }
-        send( note, relay );
-    });
-    temp_socket.connect( relay );
-    async function isNoteSetYet( note_i_seek ) {
-        return new Promise( function( resolve, reject ) {
-            if ( note_i_seek == "" ) {
-                setTimeout( async function() {
-                    var msg = await isNoteSetYet( id );
-                    resolve( msg );
-                }, 100 );
-            } else {
-                resolve( note_i_seek );
-            }
-        });
-    }
-    async function getTimeoutData() {
-        var note_i_seek = await isNoteSetYet( id );
-        return note_i_seek;
-    }
-    var returnable = await getTimeoutData();
-    return returnable;
-}
-
-function isValidAddress( address ) {
-    try{
-        return ( typeof( bitcoinjs.address.toOutputScript( address, bitcoinjs.networks.mainnet ) ) == "object" );
-    } catch( e ) {
-        return;
-    }
-}
-
-async function getPreimageFromTransactionThatSpendsAnHTLC( txid, pmthash ) {
-    var json = await getData( "https://mempool.space/api/tx/" + txid );
-    var i; for ( i=0; i<json[ "vin" ].length; i++ ) {
-        var j; for ( j=0; j<json[ "vin" ][ i ][ "witness" ].length; j++ ) {
-            if ( bitcoinjs.crypto.sha256( Buffer.from( json[ "vin" ][ i ][ "witness" ][ j ], "hex" ) ).toString( "hex" ) == pmthash ) {
-                console.log( "preimage I am passing in:", json[ "vin" ][ i ][ "witness" ][ j ] );
-                console.log( "payment hash I am checking against:", pmthash );
-                console.log( "payment hash I get when I hash the supposed preimage:", bitcoinjs.crypto.sha256( Buffer.from( json[ "vin" ][ i ][ "witness" ][ j ], "hex" ) ).toString( "hex" ) );
-                return json[ "vin" ][ i ][ "witness" ][ j ];
-            }
-        }
-    }
-}
-
-var offers = {};
-
-async function openConnection( connection ) {
-    console.log( "connected to nostr relay " + relay );
-    connection.on( 'error', function( error ) {
-        console.log( error );
-    });
-    connection.on( 'message', async function( message ) {
-        var [type, subId, event] = JSON.parse(message.utf8Data);
+      async function handleMessage(message) {
+        var [type, subId, event] = JSON.parse(message.data);
         var { kind, content } = event || {};
-        if (!event) return;
-        console.log( "event:", event );
-        if (kind === 10043) {
-          if (!content) return;
-          var offerContent = JSON.parse(content);
-          offers = {};
-          offers[offerContent.offer_id] = offerContent;
+        if ( !event || !event[ "id" ] ) return;
+        if ( seen_ids.includes( event.id ) ) return;
+        seen_ids.push( event.id );
 
-          console.log('offers:', offers);
+        if (kind === 10043) {
+          console.log(event.pubkey);
+          if ($(`div[data-pubkey="${event.pubkey}"]`)) {
+            $(`div[data-pubkey="${event.pubkey}"]`).remove();
+          }
+          if (!content) return;
+          if (!isValidJson(content)) return;
+
+          var parsedEvent = JSON.parse(content);
+
+          if (Object.keys(parsedEvent).length !== 6) return;
+          if (
+            !parsedEvent.offer_id ||
+            !parsedEvent.pubkey ||
+            !parsedEvent.min_amount ||
+            !parsedEvent.max_amount ||
+            !parsedEvent.fee_type ||
+            !parsedEvent.fee
+          )
+            return;
+
+          if (!isHex(parsedEvent.offer_id)) return;
+          if (parsedEvent.offer_id.length !== 64) return;
+
+          if (!isHex(parsedEvent.pubkey)) return;
+          if (parsedEvent.pubkey.length !== 66) return;
+
+          if (typeof parsedEvent.min_amount !== "number") return;
+          if (typeof parsedEvent.max_amount !== "number") return;
+
+          if (parsedEvent.min_amount < 546) return;
+          if (parsedEvent.max_amount < 546) return;
+
+          if (String(parsedEvent.min_amount).includes(".")) return;
+          if (String(parsedEvent.max_amount).includes(".")) return;
+
+          if (typeof parsedEvent.fee_type !== "string") return;
+          if (
+            parsedEvent.fee_type !== "absolute" &&
+            parsedEvent.fee_type !== "percentage"
+          )
+            return;
+
+          if (typeof parsedEvent.fee !== "number") return;
+          if (parsedEvent.fee < 0) return;
+          content = JSON.parse(content);
+          if ( $( `.offer[ data-pubkey="${event.pubkey}" ]` ) ) $( `.offer[ data-pubkey="${event.pubkey}" ]` ).remove();
+          var div = document.createElement("div");
+          var fee_suffix = "%";
+          if (content.fee_type == "absolute") fee_suffix = " sats";
+          div.innerHTML = `<div class="offer">
+                <div>You send: sats on lightning</div>
+                <div>You receive: sats on the base layer</div>
+                <div>Minimum amount: <span class="min_amt"></span> sats</div>
+                <div>Maximum amount: <span class="max_amt"></span> sats</div>
+                <div>Fee: <span class="fee"></span></div>
+                <div class="accept_offer"><button>Accept offer</button></div>
+                <div class="fill_in_details">
+                  <p>
+                    Enter an amount of sats you want to receive
+                  </p>
+                  <p>
+                    <input type="number" step="1" class="enter_amount">
+                  </p>
+                  <p>
+                    Enter a bitcoin address where you want to receive the money
+                  </p>
+                  <p>
+                    <input class="enter_address">
+                  </p>
+                  <p>
+                    <button class="finalize_acceptance">Submit</button>
+                  </p>
+                </div>
+              </div>`;
+          div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-pubkey", event.pubkey );
+          div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-offer_id", content.offer_id );
+          div.getElementsByClassName( "offer" )[ 0 ].setAttribute( "data-btckey", content.pubkey );
+          div.getElementsByClassName("min_amt")[0].innerText = content.min_amount.toLocaleString();
+          div.getElementsByClassName("max_amt")[0].innerText = content.max_amount.toLocaleString();
+          div.getElementsByClassName("fee")[0].innerText = String(content.fee) + fee_suffix;
+          div.getElementsByClassName("accept_offer")[0].onclick = function () {
+            var pubkey = this.parentElement.getAttribute("data-pubkey");
+            this.parentElement.getElementsByClassName(
+              "fill_in_details"
+            )[0].style.display = "block";
+            this.parentElement.getElementsByClassName("enter_amount")[0].value =
+              content.min_amount;
+            this.parentElement.getElementsByClassName("enter_amount")[0].min =
+              content.min_amount;
+            this.parentElement.getElementsByClassName("enter_amount")[0].max =
+              content.max_amount;
+          };
+          div.getElementsByClassName("finalize_acceptance")[0].onclick =
+            async function () {
+              sessionStorage.removeItem( "successful_payment" );
+              var sellerPubkey =
+                this.parentElement.parentElement.parentElement.getAttribute(
+                  "data-pubkey"
+                );
+              var btckey =
+                this.parentElement.parentElement.parentElement.getAttribute(
+                  "data-btckey"
+                );
+              var offer_id =
+                this.parentElement.parentElement.parentElement.getAttribute(
+                  "data-offer_id"
+                );
+              var amount =
+                this.parentElement.parentElement.getElementsByClassName(
+                  "enter_amount"
+                )[0].value;
+              var destinationAddress =
+                this.parentElement.parentElement.getElementsByClassName(
+                  "enter_address"
+                )[0].value;
+
+              if (!amount || isNaN(amount)) {
+                alert("Please enter a valid amount");
+                return;
+              }
+              amount = Number(amount);
+              var address =
+                this.parentElement.parentElement.getElementsByClassName(
+                  "enter_address"
+                )[0].value;
+              if (!address || !isValidAddress(address)) {
+                alert("Please enter a valid bitcoin address");
+                return;
+              }
+              amount = Number(amount.toFixed( 0 ));
+              var original_amount = amount;
+              var feerate = await getMinFeeRate();
+              amount = amount + ( 200 * feerate );
+              var total = amount;
+              var mining_fee = total - original_amount;
+              if (parsedEvent.fee_type === "absolute") {
+                total = total + parsedEvent.fee;
+              } else {
+                total = amount * ((100 + parsedEvent.fee) / 100);
+              }
+              var service_fee = ( total - mining_fee ) - original_amount;
+              var conf = confirm( `The total amount you will pay is ${total.toFixed( 0 )} sats. The breakdown is:\n\n${original_amount.toFixed( 0 )} sats <-- what you will receive\n${mining_fee.toFixed( 0 )} sats <-- what miners will receive\n${service_fee.toFixed( 0 )} sats <-- what the swap provider will receive\n\nClick ok if that is alright with you or click cancel to stop this transaction` );
+              if ( !conf ) return;
+              var preimage =
+                bitcoinjs.ECPair.makeRandom().privateKey.toString("hex");
+              var hash = bitcoinjs.crypto
+                .sha256(hexToBytes(preimage))
+                .toString("hex");
+              var htlcPair = bitcoinjs.ECPair.makeRandom();
+              var htlcPub = htlcPair.publicKey.toString("hex");
+              var htlcPrv = htlcPair.privateKey.toString("hex");
+              var blockheight = await getBlockheight();
+              var timelock = blockheight + 10;
+              console.log(
+                "serverpubkey:",
+                btckey,
+                "userpubkey",
+                htlcPub,
+                "payment hash",
+                hash,
+                "timelock",
+                timelock
+              );
+              var witness_script = generateHtlc(
+                btckey,
+                htlcPub,
+                hash,
+                timelock
+              );
+              var htlcObject = bitcoinjs.payments.p2wsh({
+                redeem: {
+                  output: witness_script,
+                  network: bitcoinjs.networks.mainnet,
+                },
+                network: bitcoinjs.networks.mainnet,
+              });
+              sessionStorage.htlcInfo = JSON.stringify([
+                htlcObject.address,
+                btckey,
+                amount,
+                preimage,
+                htlcPrv,
+                timelock,
+                destinationAddress,
+                htlcPub,
+                original_amount,
+              ]);
+              var message = {};
+              message["offer_id"] = offer_id;
+              message["amount"] = amount;
+              message["hash"] = hash;
+              message["script_address"] = htlcObject.address;
+              message["pubkey"] = htlcPub;
+              console.log("message:", JSON.stringify(message));
+              var encrypted_message = encrypt(
+                privKey,
+                sellerPubkey,
+                JSON.stringify(message)
+              );
+              if (parsedEvent.fee_type === "absolute") {
+                sessionStorage.expected_invoice_amount =
+                  amount + parsedEvent.fee;
+              } else {
+                sessionStorage.expected_invoice_amount =
+                  Number((amount * ((100 + parsedEvent.fee) / 100)).toFixed(0));
+              }
+              var acceptEvent = {
+                content: encrypted_message,
+                created_at: Math.floor(Date.now() / 1000),
+                kind: 4,
+                tags: [["p", sellerPubkey]],
+                pubkey: pubKey,
+              };
+
+              var signedOffer = await getSignedEvent(acceptEvent, privKey);
+              //console.log( "is the socket ready?", socket.readyState );
+              //console.log( "is the message ready?", JSON.stringify(['EVENT', signedOffer]) );
+              socket.send(JSON.stringify(["EVENT", signedOffer]));
+            };
+          $(".orderbook").append(div);
         }
 
         if (kind === 4) {
-          if ( deal_in_progress ) return;
-          var accept = decrypt(privKey, event.pubkey, content)
-          //console.log(`we get:`, accept, event.pubkey);
-
-          if (!isValidJson(accept)) return;
-          //console.log(`valid jSON`);
-          var acceptJSON = JSON.parse(accept);
-          if (Object.keys(acceptJSON).length !== 5) return;
-          //console.log(`JSON accepted:`, Object.keys(acceptJSON));
-          // console.log(
-          //   typeof acceptJSON['hash'],
-          //   typeof acceptJSON['script_address'],
-          //   typeof acceptJSON['pubkey']
-          // );
-
-          var jsonAmount = acceptJSON['amount'];
-          var jsonHash = acceptJSON['hash'];
-          var jsonAddress = acceptJSON['script_address'];
-          var jsonPubkey = acceptJSON['pubkey'];
-
-          if (!jsonAmount) return;
-          if (typeof jsonAmount !== 'number') return;
-          if (String(jsonAmount).includes( "." )) return;
-
-          if (!jsonHash) return;
-          if (typeof jsonHash !== 'string') return;
-          if (jsonHash.length !== 64) return;
-          if (!isHex(jsonHash)) return;
-          var status = await checkInvoiceStatusWithoutLoop( jsonHash );
-          if ( status ) return;
-
-          if (!jsonAddress) return;
-          if (typeof jsonAddress !== 'string') return;
-          if (!isValidAddress(jsonAddress)) return;
-
-          if (!jsonPubkey) return;
-          if (typeof jsonPubkey !== 'string') return;
-          if (jsonPubkey.length !== 66) return;
-
-          var eventContent = JSON.parse( accept );
-          //console.log( "timestamp:", Date( event.created_at ).toLocaleString(), "now minus ten:", Date( Math.floor( Date.now() / 1000 ) - 600 ).toLocaleString() );
-          var blockHeight = await getBlockheight();
-          var timelock = blockHeight + 10;
-          //console.log(offers + eventContent.offer_id);
           try {
-            var offerPubkey = offers[eventContent.offer_id]['pubkey'];
-          } catch( e ) {
-            return "no matching pubkey, you probably restarted the app";
+            content = decrypt(privKey, event.pubkey, content);
+          } catch (e) {
+            var error = `troll data`;
           }
-          //ensure the offer pubkey corresponds to a private key you "own";
-          if ( offerPubkey != nobleSecp256k1.getPublicKey( localStorage.content[ "privkey" ], true ) ) return;
-          //now we validate that the acceptance message is within the ranges
-          //offered by our offer
-          if ( jsonAmount < offers[eventContent.offer_id]['min_amount'] ) return;
-          if ( jsonAmount > offers[eventContent.offer_id]['max_amount'] ) return;
-          console.log(`we passed the test`);
-          // console.log(
-          //   offerPubkey,
-          //   eventContent.pubkey,
-          //   eventContent.hash,
-          //   timelock
-          // );
-          var witness_script = generateHtlc(
-            offerPubkey,
-            eventContent.pubkey,
-            eventContent.hash,
-            timelock
+          var div = document.createElement("div");
+          div.className = "ln-inv";
+
+          if (!isValidInvoice(content)) {
+            alert("Seller trolled you, aborting trade!");
+            return;
+          }
+
+          if (
+            getInvoiceAmount(content) !==
+            Number(sessionStorage.expected_invoice_amount)
+          ) {
+            alert( "Seller tried to scam you, aborting trade! Expected amount: " + sessionStorage.expected_invoice_amount + " Actual amount: " + getInvoiceAmount(content) );
+            return;
+          }
+
+          var qrdiv = document.createElement( "div" );
+          qrdiv.append( createQR(content) );
+          var qrhtml = qrdiv.innerHTML;
+          var html = qrhtml;
+          html += `<p>${content}</p>`;
+          showModal( html );
+          // showPopup(qrcode, content);
+          var htlcArray = JSON.parse(sessionStorage.htlcInfo);
+          var waitIsOver = await waitForMoneyToArriveInAddress(htlcArray[0]);
+          sessionStorage.removeItem( "alert_sent" );
+          if ( waitIsOver == "failure" ) return;
+          var tx_array = await addressReceivedMoneyInThisTx(htlcArray[0]);
+          console.log(tx_array);
+          // document.body.append(div);
+          var txid = tx_array[0];
+          var txindex = tx_array[1];
+          var amount_received = tx_array[2];
+          var amount_expected = htlcArray[2];
+          if (
+            amount_received !== amount_expected
+          ) {
+            alert("Seller tried to scam you, aborting trade! Amount received: " + amount_received + " Amount expected: " + amount_expected, " Equality: " + amount_received === amount_expected );
+            return;
+          }
+          var original_quantity_of_sats = amount_expected;
+          var feerate = await getMinFeeRate();
+          // var new_quantity_of_sats = original_quantity_of_sats - 200 * feerate;
+          var new_quantity_of_sats = htlcArray[8];
+          var userPrivkey = htlcArray[4];
+          var serverPubkey = htlcArray[1];
+          var useraddress = htlcArray[6];
+
+          var tx_hex = sweepingHTLC(
+            txid,
+            txindex,
+            original_quantity_of_sats,
+            new_quantity_of_sats,
+            userPrivkey,
+            serverPubkey,
+            htlcArray[3],
+            htlcArray[5],
+            useraddress,
+            htlcArray[7]
           );
-          var p2wsh = bitcoinjs.payments.p2wsh({
-            redeem: { output: witness_script, network: bitcoinjs.networks.mainnet },
-          });
-          console.log('swap address:', p2wsh.address);
-          if ( jsonAddress !=  p2wsh.address ) {
-            console.log( "oh no! The addresses didn't match. They sent this one:", jsonAddress, "but I got this one:", p2wsh.address );
-            return;
-          }
-          // console.log(`acceptance`);
-          console.log( "a deal is already in progress, right?", deal_in_progress );
-          deal_in_progress = true;
-          console.log( "but noow there is, right?", deal_in_progress );
-          //replace offer with a blank one so that people don't accept it twice
-          var offerEvent = {
-              content: "",
-              created_at: Math.floor(Date.now() / 1000),
-              kind: 10043,
-              tags: [],
-              pubkey: pubKeyMinus2,
-          };
-          var signedOffer = await getSignedEvent(offerEvent, privKey);
-          console.log( "signed offer:", JSON.stringify( signedOffer ) );
-          connection.sendUTF( JSON.stringify( [ "EVENT", signedOffer ] ) );
-
-          if ( fee_type === 'absolute' ) {
-            var post_fee_amount = jsonAmount + fee;
-          } else {
-            var post_fee_amount = jsonAmount * ( ( 100 + fee ) / 100 );
-          }
-          post_fee_amount = Number( post_fee_amount.toFixed( 0 ) );
-          console.log( "info I will pass to the get invoice function:", post_fee_amount, jsonHash, 40 );
-          var swap_invoice = await getHodlInvoice( post_fee_amount, jsonHash, 40 );
-          console.log( "swap_invoice:", swap_invoice );
-          if ( !swap_invoice ) {
-            deal_in_progress = false;
-            socket = {}
-            console.log( "socket:", socket );
-            socket = new WebSocketClient();
-            console.log( "socket:", socket );
-            socket.on( 'connect', openConnection );
-	    socket.on( 'close', () => {
-	        console.log( "connection closed! reconnecting..." );
-	        socket.connect( relay );
-	    });
-            socket.connect( relay );
-            return;
-          }
-          var note = setNote( swap_invoice, event.pubkey, relay );
-          var message = await payHTLCAndSettleWithPreimage( swap_invoice, p2wsh.address, jsonAmount );
-          console.log( message );
-          deal_in_progress = false;
+          console.log(tx_hex);
+          $( '.black-bg' ).style.display = "none";
+          $( '.modal' ).style.display = "none";
+          alert( `You're almost done! Just click ok when this transaction has 1 confirmation: https://mempool.space/tx/${txid}` );
+          var sweep_txid = await pushBTCpmt(tx_hex);
+          sessionStorage[ "successful_payment" ] = true;
+          sessionStorage.removeItem( "waiting_for_payment" );
+          alert( `Your transaction was a success! Here is your txid: https://mempool.space/tx/${sweep_txid}` );
+          window.location.reload();
         }
-    });
-    var timestamp = Math.floor(Date.now() / 1000);
-    var timeMinusTen = timestamp - 600;
-    var subId = ECPair.makeRandom().privateKey.toString( "hex" );
-    var filter = { kinds: [4], "#p": [pubKeyMinus2], since: timeMinusTen };
-    var filter2 = { kinds: [10043], authors: [pubKeyMinus2], since: timeMinusTen };
-    var subscription = [ "REQ", subId, filter, filter2 ];
-    subscription = JSON.stringify( subscription );
-    setTimeout( function() {connection.sendUTF( subscription );}, 1000 );
+      }
 
-    async function sendOffer() {
-        var keypair = ECPair.makeRandom();
-        localStorage.setContent( "privkey", keypair.privateKey.toString( 'hex' ) );
-        var offer = {
-            offer_id: ECPair.makeRandom().privateKey.toString('hex'),
-            pubkey: keypair.publicKey.toString('hex'),
-            min_amount: min_amount,
-            max_amount: max_amount,
-            fee_type: fee_type,
-            fee: fee,
+      socket.addEventListener( "message", handleMessage );
+
+      var timestamp = Math.floor(Date.now() / 1000);
+      var timeMinusTen = timestamp - 600;
+      var subId = bitcoinjs.ECPair.makeRandom().privateKey.toString("hex");
+      var filter = { ids: ["ce32108a5947fca3e4943326b51c7cf2508572a1ac7b9957a308339a6455b4b1"] };
+      var filter2 = { kinds: [4], "#p": [pubKey], since: timestamp - 5 };
+
+      async function openConnection() {
+        console.log("connected to " + relay);
+        var subscription = ["REQ", subId, filter, filter2];
+        console.log("Subscription:", subscription);
+        socket.send(JSON.stringify(subscription));
+      }
+
+      socket.addEventListener("open", openConnection );
+
+      async function getSignedEvent(event, privateKey) {
+        var eventData = JSON.stringify([
+          0, // Reserved for future use
+          event["pubkey"], // The sender's public key
+          event["created_at"], // Unix timestamp
+          event["kind"], // Message “kind” or type
+          event["tags"], // Tags identify replies/recipients
+          event["content"], // Your note contents
+        ]);
+        event.id = sha256(eventData).toString("hex");
+        event.sig = await schnorr.sign(event.id, privateKey);
+        return event;
+      }
+      //next step: create and validate the swap address on both ends
+      function generateHtlc(serverPubkey, userPubkey, pmthash, timelock) {
+        return bitcoinjs.script.fromASM(
+          `
+                OP_SIZE
+                ${bitcoinjs.script.number.encode(32).toString('hex')}
+                OP_EQUALVERIFY
+              	OP_SHA256
+              	${pmthash}
+              	OP_EQUAL
+              	OP_IF
+                	${userPubkey}
+              	OP_ELSE
+                	${bitcoinjs.script.number.encode(timelock).toString("hex")}
+                	OP_CHECKLOCKTIMEVERIFY
+                	OP_DROP
+                	${serverPubkey}
+              	OP_ENDIF
+              	OP_CHECKSIG
+
+            	`
+            .trim()
+            .replace(/\s+/g, " ")
+        );
+      }
+      async function getBlockheight() {
+        var data = await getData(
+          "https://mempool.space/api/blocks/tip/height"
+        );
+        return Number(data);
+      }
+      async function getData(url) {
+        var rtext = "";
+        function inner_get(url) {
+          var xhttp = new XMLHttpRequest();
+          xhttp.open("GET", url, true);
+          xhttp.send();
+          return xhttp;
+        }
+        var data = inner_get(url);
+        data.onerror = function (e) {
+          rtext = "error";
         };
+        async function isResponseReady() {
+          return new Promise(function (resolve, reject) {
+            if (rtext == "error") {
+              resolve(rtext);
+            }
+            if (!data.responseText || data.readyState != 4) {
+              setTimeout(async function () {
+                var msg = await isResponseReady();
+                resolve(msg);
+              }, 50);
+            } else {
+              resolve(data.responseText);
+            }
+          });
+        }
+        var returnable = await isResponseReady();
+        return returnable;
+      }
 
-        var offerEvent = {
-            content: JSON.stringify(offer),
-            created_at: Math.floor(Date.now() / 1000),
-            kind: 10043,
-            tags: [],
-            pubkey: pubKeyMinus2,
+      function showPopup(qrcode, invoice) {
+        $( '.black-bg' ).style.display = "block";
+        qrcode.style.width = "100%";
+        var popup = document.getElementById("popup");
+        var popupText = document.getElementById("popupText");
+        popup.style.display = "block";
+        popup.prepend(qrcode);
+        popupText.innerText = invoice;
+      }
+
+      function isValidInvoice(invoice) {
+        try {
+          return typeof bolt11.decode(invoice) == "object";
+        } catch (e) {
+          return;
+        }
+      }
+
+      function getInvoiceAmount(invoice) {
+        var decoded = bolt11.decode(invoice);
+        var amount = decoded["satoshis"].toString();
+        return Number(amount);
+      }
+      function createQR(content) {
+        var dataUriPngImage = document.createElement("img"),
+          s = QRCode.generatePNG(content, {
+            ecclevel: "M",
+            format: "html",
+            fillcolor: "#FFFFFF",
+            textcolor: "#000000",
+            margin: 4,
+            modulesize: 8,
+          });
+        dataUriPngImage.src = s;
+        dataUriPngImage.id = "qr_code";
+        dataUriPngImage.style.width = "100%";
+        dataUriPngImage.style.maxWidth = "20rem";
+        return dataUriPngImage;
+      }
+
+      function sweepingHTLC(
+        txid,
+        txindex,
+        original_quantity_of_sats,
+        new_quantity_of_sats,
+        userPrivkey,
+        serverPubkey,
+        preimage,
+        timelock,
+        useraddress,
+        userPubkey
+      ) {
+        console.log(
+          "serverPubkey:",
+          serverPubkey,
+          "userPubkey:",
+          userPubkey,
+          "preimage:",
+          preimage,
+          "timelock:",
+          timelock
+        );
+        var pmthash = bitcoinjs.crypto
+          .sha256(Buffer.from(preimage, "hex"))
+          .toString("hex");
+
+        var witnessscript = generateHtlc(
+          serverPubkey,
+          userPubkey,
+          pmthash,
+          timelock
+        );
+        console.log("witness script:", witnessscript.toString("hex"));
+        var outputscript =
+          "00" + bitcoinjs.crypto.sha256(witnessscript).toString("hex");
+        //  var useraddress = "tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt";
+        var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.mainnet });
+        //  psbt.setLocktime( timelock );
+        psbt.addInput({
+          hash: txid,
+          index: txindex,
+          sequence: 0xfffffffe,
+          witnessUtxo: {
+            script: Buffer.from(
+              "0020" +
+                bitcoinjs.crypto
+                  .sha256(Buffer.from(witnessscript, "hex"))
+                  .toString("hex"),
+              "hex"
+            ),
+            value: original_quantity_of_sats,
+          },
+          witnessScript: Buffer.from(witnessscript, "hex"),
+        });
+        psbt.addOutput({
+          address: useraddress,
+          value: new_quantity_of_sats,
+        });
+        psbt.signInput(
+          0,
+          bitcoinjs.ECPair.fromPrivateKey(Buffer.from(userPrivkey, "hex"))
+        );
+
+        var getFinalScripts = (txindex, input, script) => {
+          // Step 1: Check to make sure the meaningful locking script matches what you expect.
+          var decompiled = bitcoinjs.script.decompile(script);
+          if (!decompiled || decompiled[0] !== bitcoinjs.opcodes.OP_SIZE) {
+            throw new Error(`Can not finalize input #${txindex}`);
+          }
+
+          // Step 2: Create final scripts
+          var witnessStackClaimBranch = bitcoinjs.payments.p2wsh({
+            redeem: {
+              output: script,
+              input: bitcoinjs.script.compile([
+                input.partialSig[0].signature,
+                Buffer.from(preimage, "hex"),
+              ]),
+            },
+          });
+          console.log("First branch witness stack:");
+          console.log(
+            witnessStackClaimBranch.witness.map((x) => x.toString("hex"))
+          );
+          return {
+            finalScriptWitness: witnessStackToScriptWitness(
+              witnessStackClaimBranch.witness
+            ),
+          };
         };
+        psbt.finalizeInput(0, getFinalScripts);
+        return psbt.extractTransaction().toHex();
+      }
 
-        var signedOffer = await getSignedEvent(offerEvent, privKey);
-        console.log( "about to send this offer:", JSON.stringify( signedOffer ) );
-        connection.sendUTF( JSON.stringify( [ "EVENT", signedOffer ] ) );
-        console.log( "sent!" );
-        if ( !deal_in_progress ) setTimeout( function() {
-            socket = {}
-            console.log( "socket:", socket );
-            socket = new WebSocketClient();
-            console.log( "socket:", socket );
-            socket.on( 'connect', openConnection );
-	    socket.on( 'close', () => {
-	        console.log( "connection closed! reconnecting..." );
-	        socket.connect( relay );
-	    });
-            socket.connect( relay );
-        }, 1000 * 60 * 10 );
-    }
-    sendOffer();
-}
+      //this function returns true if the address received money or false if it did not
+      function addressOnceHadMoney(address) {
+        return new Promise(function (resolve, reject) {
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function () {
+            if (
+              this.readyState == 4 &&
+              this.status > 199 &&
+              this.status < 300
+            ) {
+              var json = JSON.parse(xhttp.responseText);
+              if (
+                json["chain_stats"]["funded_txo_count"] > 0 ||
+                json["mempool_stats"]["funded_txo_count"] > 0
+              ) {
+                resolve(true);
+              }
+              resolve(false);
+            }
+          };
+          xhttp.open(
+            "GET",
+            "https://mempool.space/api/address/" + address,
+            true
+          );
+          xhttp.send();
+        });
+      }
+      //this function waits until money arrives in an address, checking every five seconds, and then returns true -- it never returns false but it can hang forever
+      async function waitForMoneyToArriveInAddress(address) {
+        sessionStorage[ "waiting_for_payment" ] = true;
+        async function isAddressFundedYet(address) {
+          if ( sessionStorage[ "waiting_for_payment" ] ) {
+            setTimeout( function() {
+              if ( !sessionStorage[ "successful_payment" ] && !sessionStorage[ "alert_sent" ] ) {
+                modalVanish();
+                alert( `Looks like you didn't pay in time. Please try again.` );
+                sessionStorage[ "alert_sent" ] = true;
+                sessionStorage.removeItem( "waiting_for_payment" );
+                return "failure";
+              }
+            }, 200000 );
+          }
+          var address_received_money = await addressOnceHadMoney(address);
+          return new Promise(function (resolve, reject) {
+            if (!address_received_money) {
+              setTimeout(async function () {
+                if ( !sessionStorage[ "waiting_for_payment" ] ) resolve( "failure" );
+                var msg = await isAddressFundedYet(address);
+                resolve(msg);
+              }, 5000);
+            } else {
+              resolve(address_received_money);
+            }
+          });
+        }
+        async function getTimeoutData() {
+          var address_received_money = await isAddressFundedYet(address);
+          return address_received_money;
+        }
+        var returnable = await getTimeoutData();
+        return returnable;
+      }
 
-socket.on( 'connect', openConnection );
-socket.on( 'close', () => {
-    console.log( "connection closed! reconnecting..." );
-    socket.connect( relay );
-});
-socket.connect( relay );
+      async function addressReceivedMoneyInThisTx(address) {
+        let txid;
+        let vout;
+        let amt;
+        let nonjson = await getData("https://mempool.space/api/address/" + address + "/txs");
+        let json = JSON.parse(nonjson);
+        json.forEach(function (tx) {
+          tx["vout"].forEach(function (output, index) {
+            if (output["scriptpubkey_address"] == address) {
+              txid = tx["txid"];
+              vout = index;
+              amt = output["value"];
+            }
+          });
+        });
+        return [txid, vout, amt];
+      }
 
-function isValidJson( content ) {
-	if ( !content ) return;
-	try {  
-    	var json = JSON.parse( content );
-	} catch ( e ) {
-    	return;
-	}
-	return true;
-}
+      function getCompressedPubkeyHexFromPrivkeyHex(privkeyhex) {
+        return bitcoinjs.ECPair.fromPrivateKey(Buffer.from(privkeyhex, "hex"), {
+          network: bitcoinjs.networks.mainnet,
+        }).publicKey.toString("hex");
+      }
+      async function getMinFeeRate() {
+        var fees = await getData(
+          "https://mempool.space/api/v1/fees/recommended"
+        );
+        fees = JSON.parse( fees );
+        if (!("hourFee" in fees)) return "error -- site down";
+        var minfee = fees["hourFee"];
+        return minfee;
+      }
+      function showModal( content ) {
+        $( ".modal" ).innerHTML = `<div style="position: absolute;right: 1rem;top: 0.5rem;font-size: 2rem; cursor: pointer;" onclick="modalVanish()">&times;</div>`;
+        $( ".modal" ).innerHTML += `<div style="overflow-y: scroll; max-height: 80vh; margin-top: 1.5rem;">${content}</div>`;
+        $( ".black-bg" ).style.display = "block";
+        $( ".modal" ).style.display = "block";
+      }
 
-function isHex( h ) {
-    var length = h.length;
-    if ( length % 2 ) return;
-    if ( length > 66 ) return;
-    var a = BigInt( "0x" + h, "hex" );
-    var unpadded = a.toString( 16 );
-    var padding = "000000000000000000000000000000000000000000000000000000000000000000";
-    padding = padding + unpadded.toString();
-    padding = padding.slice( -Math.abs( length ) );
-    return ( padding === h );
-}
+      function witnessStackToScriptWitness(witness) {
+        let buffer2 = Buffer.allocUnsafe(0);
+        function writeSlice(slice) {
+          buffer2 = Buffer.concat([buffer2, Buffer.from(slice)]);
+        }
+        function writeVarInt(i) {
+          const currentLen = buffer2.length;
+          const varintLen = varuintBitcoin.encodingLength(i);
+          buffer2 = Buffer.concat([buffer2, Buffer.allocUnsafe(varintLen)]);
+          varuintBitcoin.encode(i, buffer2, currentLen);
+        }
+        function writeVarSlice(slice) {
+          writeVarInt(slice.length);
+          writeSlice(slice);
+        }
+        function writeVector(vector) {
+          writeVarInt(vector.length);
+          vector.forEach(writeVarSlice);
+        }
+        writeVector(witness);
+        return buffer2;
+      }
 
-async function getSignedEvent(event, privateKey) {
-    var eventData = JSON.stringify([
-        0, // Reserved for future use
-        event['pubkey'], // The sender's public key
-        event['created_at'], // Unix timestamp
-        event['kind'], // Message “kind” or type
-        event['tags'], // Tags identify replies/recipients
-        event['content'], // Your note contents
-    ]);
-    event.id = bitcoinjs.crypto.sha256(eventData).toString('hex');
-    event.sig = await nobleSecp256k1.schnorr.sign(event.id, privateKey);
-    return event;
-}
+      async function pushBTCpmt(rawtx) {
+        var txid = await postData(
+          "https://mempool.space/api/tx",
+          rawtx
+        );
+        return txid;
+      }
+
+      async function postData(url, json, content_type = "", apikey = "") {
+        var rtext = "";
+        function inner_post(url, json, content_type = "", apikey = "") {
+          var xhttp = new XMLHttpRequest();
+          xhttp.open("POST", url, true);
+          if (content_type) {
+            xhttp.setRequestHeader(`Content-Type`, content_type);
+          }
+          if (apikey) {
+            xhttp.setRequestHeader(`X-Api-Key`, apikey);
+          }
+          xhttp.send(json);
+          return xhttp;
+        }
+        var data = inner_post(url, json, content_type, apikey);
+        data.onerror = function (e) {
+          rtext = "error";
+        };
+        async function isResponseReady() {
+          return new Promise(function (resolve, reject) {
+            if (rtext == "error") {
+              resolve(rtext);
+            }
+            if (!data.responseText || data.readyState != 4) {
+              setTimeout(async function () {
+                var msg = await isResponseReady();
+                resolve(msg);
+              }, 50);
+            } else {
+              resolve(data.responseText);
+            }
+          });
+        }
+        var returnable = await isResponseReady();
+        return returnable;
+      }
+
+      function isValidJson(content) {
+        if (!content) return;
+        try {
+          var json = JSON.parse(content);
+        } catch (e) {
+          return;
+        }
+        return true;
+      }
+
+      function isHex(h) {
+        if (!h) return;
+        var length = h.length;
+        if (length % 2) return;
+        try {
+          var a = BigInt("0x" + h, "hex");
+        } catch (e) {
+          return;
+        }
+        var unpadded = a.toString(16);
+        var padding = [];
+        var i;
+        for (i = 0; i < length; i++) padding.push(0);
+        padding = padding.join("");
+        padding = padding + unpadded.toString();
+        padding = padding.slice(-Math.abs(length));
+        return padding === h;
+      }
+      function checkHeartbeat() {
+        setTimeout( () => {
+          if ( socket.readyState != 1 ) {
+            socket.removeEventListener( 'open', openConnection );
+            socket.removeEventListener( 'message', handleMessage );
+            socket = new WebSocket( relay );
+            socket.addEventListener( 'message', handleMessage );
+            socket.addEventListener( 'open', openConnection );
+          }
+          checkHeartbeat();
+        }, 2000 );
+      }
+      checkHeartbeat();
+
+      //Electron/Wrapping
+    </script>
+    <div class="black-bg" onclick="modalVanish();"></div>
+    <div class="modal"></div>
+  </body>
+</html>
