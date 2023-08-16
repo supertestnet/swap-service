@@ -494,6 +494,7 @@ async function addressSentMoneyInThisTx( address, txid_of_deposit ) {
 }
 
 async function pushBTCpmt( rawtx, network ) {
+    if ( !network ) network = "";
     var txid = await postData( "https://mempool.space/" + network + "api/tx", rawtx );
     return txid;
 }
