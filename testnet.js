@@ -1248,7 +1248,8 @@ async function getSignedEvent(event, privateKey) {
         event['tags'], // Tags identify replies/recipients
         event['content'], // Your note contents
     ]);
-    event.id = bitcoinjs.crypto.sha256(eventData).toString('hex');
+    const eventDataBuffer = Buffer.from(eventData);
+    event.id = bitcoinjs.crypto.sha256(eventDataBuffer).toString('hex');
     event.sig = await nobleSecp256k1.schnorr.sign(event.id, privateKey);
     return event;
 }
